@@ -1,0 +1,43 @@
+.split {
+  display: flex;
+  height: 100%;
+}
+
+.split.split-horizontal > .split-child {
+  height: 100%;
+  overflow: hidden;
+}
+
+.gutter {
+  background-color: #e0e0e0;
+  position: relative;
+  cursor: col-resize;
+  z-index: 10;
+  border-left: 1px solid #ccc;
+  border-right: 1px solid #ccc;
+}
+
+.gutter:hover {
+  background-color: #ccc;
+}
+
+.gutter.gutter-horizontal {
+  width: 6px;
+  background: repeating-linear-gradient(
+    90deg,
+    #e0e0e0 0px,
+    #e0e0e0 2px,
+    #d0d0d0 2px,
+    #d0d0d0 4px
+  );
+}
+
+.gutter:hover.gutter-horizontal {
+  background: repeating-linear-gradient(
+    90deg,
+    #ccc 0px,
+    #ccc 2px,
+    #bbb 2px,
+    #bbb 4px
+  );
+}

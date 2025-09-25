@@ -1,0 +1,62 @@
+{
+  "manifest_version": 3,
+  "name": "网络控制台",
+  "version": "1.0.0",
+  "description": "一个强大的网络请求监控和调试工具，类似于Edge浏览器的网络控制台，支持请求编辑、重发和响应分析",
+  "author": "超大只番薯",
+  "homepage_url": "https://github.com/your-username/network-console-extension",
+  "icons": {
+    "16": "icons/icon16.svg",
+    "32": "icons/icon32.svg",
+    "48": "icons/icon48.svg",
+    "128": "icons/icon128.svg"
+  },
+  "permissions": [
+    "activeTab",
+    "storage",
+    "debugger",
+    "webRequest",
+    "scripting",
+    "tabs",
+    "clipboardWrite"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "网络控制台",
+    "default_icon": {
+      "16": "icons/icon16.svg",
+      "32": "icons/icon32.svg",
+      "48": "icons/icon48.svg",
+      "128": "icons/icon128.svg"
+    }
+  },
+  "background": {
+    "service_worker": "assets/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["assets/content.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; worker-src 'self';"
+  },
+  "options_page": "options.html",
+  "devtools_page": "devtools-entry.html",
+  "minimum_chrome_version": "88",
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+N",
+        "mac": "Command+Shift+N"
+      },
+      "description": "打开网络控制台"
+    }
+  }
+}

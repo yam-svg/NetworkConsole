@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>图标转换工具</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; }
+        canvas { border: 1px solid #ccc; margin: 10px; }
+        button { padding: 10px 20px; margin: 5px; background: #0078d4; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .size-group { margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>PNG图标生成工具</h1>
+        <p>此工具可以帮助您将SVG图标转换为PNG格式，适用于Edge商店上传。</p>
+        
+        <div class="size-group">
+            <h3>16x16 图标</h3>
+            <canvas id="canvas16" width="16" height="16"></canvas>
+            <button onclick="generateIcon(16)">生成 16x16</button>
+            <button onclick="downloadIcon(16)">下载</button>
+        </div>
+        
+        <div class="size-group">
+            <h3>32x32 图标</h3>
+            <canvas id="canvas32" width="32" height="32"></canvas>
+            <button onclick="generateIcon(32)">生成 32x32</button>
+            <button onclick="downloadIcon(32)">下载</button>
+        </div>
+        
+        <div class="size-group">
+            <h3>48x48 图标</h3>
+            <canvas id="canvas48" width="48" height="48"></canvas>
+            <button onclick="generateIcon(48)">生成 48x48</button>
+            <button onclick="downloadIcon(48)">下载</button>
+        </div>
+        
+        <div class="size-group">
+            <h3>128x128 图标</h3>
+            <canvas id="canvas128" width="128" height="128"></canvas>
+            <button onclick="generateIcon(128)">生成 128x128</button>
+            <button onclick="downloadIcon(128)">下载</button>
+        </div>
+    </div>
+
+    <script>
+        function generateIcon(size) {
+            const canvas = document.getElementById(`canvas${size}`);
+            const ctx = canvas.getContext('2d');
+            
+            // 清空画布
+            ctx.clearRect(0, 0, size, size);
+            
+            // 设置样式
+            const cornerRadius = size * 0.2;
+            const fontSize = size * 0.6;
+            
+            // 绘制圆角矩形背景
+            ctx.fillStyle = '#646cff';
+            ctx.beginPath();
+            ctx.roundRect(0, 0, size, size, cornerRadius);
+            ctx.fill();
+            
+            // 绘制文字
+            ctx.fillStyle = 'white';
+            ctx.font = `bold ${fontSize}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('N', size/2, size/2);
+        }
+        
+        function downloadIcon(size) {
+            const canvas = document.getElementById(`canvas${size}`);
+            const link = document.createElement('a');
+            link.download = `icon${size}.png`;
+            link.href = canvas.toDataURL();
+            link.click();
+        }
+        
+        // 页面加载时生成所有图标
+        window.onload = function() {
+            generateIcon(16);
+            generateIcon(32);
+            generateIcon(48);
+            generateIcon(128);
+        };
+        
+        // Canvas roundRect polyfill for older browsers
+        if (!CanvasRenderingContext2D.prototype.roundRect) {
+            CanvasRenderingContext2D.prototype.roundRect = function(x, y, width, height, radius) {
+                this.moveTo(x + radius, y);
+                this.lineTo(x + width - radius, y);
+                this.quadraticCurveTo(x + width, y, x + width, y + radius);
+                this.lineTo(x + width, y + height - radius);
+                this.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+                this.lineTo(x + radius, y + height);
+                this.quadraticCurveTo(x, y + height, x, y + height - radius);
+                this.lineTo(x, y + radius);
+                this.quadraticCurveTo(x, y, x + radius, y);
+                this.closePath();
+            };
+        }
+    </script>
+</body>
+</html>

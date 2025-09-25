@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>测试新功能 - 请求编辑器响应与参数化编辑</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin-bottom: 30px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .test-title {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .log {
+            background: #f8f9fa;
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin-top: 10px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>测试网络请求编辑器新功能</h1>
+        <p>此页面用于测试新增的响应显示和参数化编辑功能。请打开开发者工具中的"网络请求编辑器"来使用。</p>
+        
+        <div class="test-section">
+            <h3 class="test-title">1. GET 请求测试</h3>
+            <p>测试简单的GET请求，验证响应显示功能</p>
+            <button onclick="makeGetRequest()">发送GET请求</button>
+            <div id="get-log" class="log"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3 class="test-title">2. POST JSON 请求测试</h3>
+            <p>测试POST请求与JSON参数，验证参数化编辑功能</p>
+            <button onclick="makePostRequest()">发送POST请求</button>
+            <div id="post-log" class="log"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3 class="test-title">3. 表单数据请求测试</h3>
+            <p>测试表单数据提交，验证参数显示优化</p>
+            <button onclick="makeFormRequest()">发送表单请求</button>
+            <div id="form-log" class="log"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3 class="test-title">4. 文件上传测试</h3>
+            <p>测试文件上传请求</p>
+            <button onclick="makeFileUpload()">模拟文件上传</button>
+            <div id="file-log" class="log"></div>
+        </div>
+    </div>
+
+    <script>
+        function log(elementId, message) {
+            const logElement = document.getElementById(elementId);
+            const timestamp = new Date().toLocaleTimeString();
+            logElement.innerHTML += `[${timestamp}] ${message}\n`;
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+
+        function makeGetRequest() {
+            log('get-log', '开始发送GET请求...');
+            fetch('https://httpbin.org/get?param1=value1&param2=value2', {
+                method: 'GET',
+                headers: {
+                    'User-Agent': 'NetworkRequestEditor/1.0',
+                    'X-Test-Header': 'TestValue'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                log('get-log', `请求成功: ${JSON.stringify(data, null, 2)}`);
+            })
+            .catch(error => {
+                log('get-log', `请求失败: ${error.message}`);
+            });
+        }
+
+        function makePostRequest() {
+            log('post-log', '开始发送POST JSON请求...');
+            const postData = {
+                username: 'testuser',
+                email: 'test@example.com',
+                age: 25,
+                settings: {
+                    theme: 'dark',
+                    notifications: true
+                }
+            };
+            
+            fetch('https://httpbin.org/post', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-API-Key': 'test-api-key-123'
+                },
+                body: JSON.stringify(postData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                log('post-log', `请求成功: ${JSON.stringify(data, null, 2)}`);
+            })
+            .catch(error => {
+                log('post-log', `请求失败: ${error.message}`);
+            });
+        }
+
+        function makeFormRequest() {
+            log('form-log', '开始发送表单数据请求...');
+            const formData = new URLSearchParams();
+            formData.append('name', '张三');
+            formData.append('phone', '13800138000');
+            formData.append('message', '这是一条测试消息');
+            formData.append('category', 'feedback');
+            
+            fetch('https://httpbin.org/post', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-Form-Source': 'test-page'
+                },
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                log('form-log', `请求成功: ${JSON.stringify(data, null, 2)}`);
+            })
+            .catch(error => {
+                log('form-log', `请求失败: ${error.message}`);
+            });
+        }
+
+        function makeFileUpload() {
+            log('file-log', '开始模拟文件上传请求...');
+            const formData = new FormData();
+            
+            // 创建一个模拟文件
+            const file = new Blob(['这是一个测试文件的内容'], { type: 'text/plain' });
+            formData.append('file', file, 'test-file.txt');
+            formData.append('description', '测试文件上传');
+            formData.append('category', 'document');
+            
+            fetch('https://httpbin.org/post', {
+                method: 'POST',
+                headers: {
+                    'X-Upload-Source': 'test-page'
+                },
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                log('file-log', `请求成功: ${JSON.stringify(data, null, 2)}`);
+            })
+            .catch(error => {
+                log('file-log', `请求失败: ${error.message}`);
+            });
+        }
+
+        // 页面加载时的初始化日志
+        window.addEventListener('load', function() {
+            log('get-log', '页面已加载，准备测试GET请求');
+            log('post-log', '页面已加载，准备测试POST JSON请求');
+            log('form-log', '页面已加载，准备测试表单数据请求');
+            log('file-log', '页面已加载，准备测试文件上传');
+        });
+    </script>
+</body>
+</html>
