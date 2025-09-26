@@ -1,0 +1,18 @@
+{
+  "extensionName": {
+    "message": "网络控制台",
+    "description": "插件名称"
+  },
+  "extensionDescription": {
+    "message": "一个强大的网络请求监控和调试工具，类似于Edge浏览器的网络控制台，支持请求编辑、重发和响应分析",
+    "description": "插件描述"
+  },
+  "extensionTitle": {
+    "message": "网络控制台",
+    "description": "插件标题"
+  },
+  "openNetworkConsole": {
+    "message": "打开网络控制台",
+    "description": "快捷键命令描述"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "extensionName": {
+    "message": "Network Console",
+    "description": "Extension name"
+  },
+  "extensionDescription": {
+    "message": "A powerful network request monitoring and debugging tool, similar to Edge browser's network console, supporting request editing, resending and response analysis",
+    "description": "Extension description"
+  },
+  "extensionTitle": {
+    "message": "Network Console",
+    "description": "Extension title"
+  },
+  "openNetworkConsole": {
+    "message": "Open Network Console",
+    "description": "Keyboard shortcut command description"
+  }
+}
