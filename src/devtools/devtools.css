@@ -669,7 +669,8 @@ body {
 }
 
 .request-details {
-  padding: 16px;
+  position: relative;
+  padding: 8px 0 0 0;
   height: 100%;
   overflow-y: auto;
 }
@@ -709,8 +710,6 @@ body {
   background: #f8f9fa;
   border: 1px solid #e9ecef;
   border-radius: 4px;
-  max-height: 200px;
-  overflow-y: auto;
 }
 
 .header-item {
@@ -755,19 +754,16 @@ body {
 .action-buttons {
   display: flex;
   gap: 12px;
-  margin-top: 24px;
-  padding-top: 16px;
-  border-top: 1px solid #e9ecef;
 }
 
 .action-btn {
-  padding: 10px 16px;
+  padding: 2px 8px;
   background: #007bff;
   color: white;
   border: none;
   border-radius: 4px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 500;
   transition: all 0.2s;
 }

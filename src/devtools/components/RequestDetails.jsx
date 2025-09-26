@@ -1,7 +1,8 @@
-import { memo, useState } from 'react'
+import { memo, useState, useMemo, useEffect } from 'react'
 
 const RequestDetails = memo(({ request, onResend }) => {
   const [copyMessage, setCopyMessage] = useState('')
+  const [activeSubTab, setActiveSubTab] = useState('basic')
 
   const copyToClipboard = async (text, type) => {
     try {
@@ -239,6 +240,30 @@ const RequestDetails = memo(({ request, onResend }) => {
     )
   }
 
+  // 子标签页配置
+  const availableTabs = useMemo(() => {
+    const hasReqHeaders = Boolean(request && (request.headers || request.requestHeaders))
+    const hasReqBody = Boolean(request && (request.body || request.requestBody))
+    const hasResHeaders = Boolean(request && request.responseHeaders)
+    const hasResponse = Boolean(request && request.response)
+    return [
+      { id: 'basic', label: '基本信息', enabled: true },
+      { id: 'reqHeaders', label: '请求头', enabled: hasReqHeaders },
+      { id: 'reqBody', label: '请求体', enabled: hasReqBody },
+      { id: 'resHeaders', label: '响应头', enabled: hasResHeaders },
+      { id: 'response', label: '响应内容', enabled: hasResponse }
+    ]
+  }, [request])
+
+  // 当当前激活的子标签不可用时，自动切换到第一个可用标签
+  useEffect(() => {
+    const current = availableTabs.find(t => t.id === activeSubTab && t.enabled)
+    if (!current) {
+      const firstEnabled = availableTabs.find(t => t.enabled)
+      if (firstEnabled) setActiveSubTab(firstEnabled.id)
+    }
+  }, [availableTabs, activeSubTab])
+
   if (!request) {
     return (
       <div className="request-details">
@@ -267,126 +292,140 @@ const RequestDetails = memo(({ request, onResend }) => {
         </div>
       )}
 
-      {/* 基本信息 */}
-      <div className="details-section">
-        <h3>基本信息</h3>
-        <div className="details-grid">
-          <span className="details-label">URL:</span>
-          <span className="details-value">
-            {safeGet(request, 'url')}
-            <button 
-              className="copy-btn"
-              onClick={() => copyToClipboard(safeGet(request, 'url'), 'URL')}
-              style={{ marginLeft: '8px', fontSize: '10px', padding: '2px 6px' }}
-            >
-              复制
-            </button>
-          </span>
-          
-          <span className="details-label">方法:</span>
-          <span className="details-value">{safeGet(request, 'method')}</span>
-          
-          <span className="details-label">状态:</span>
-          <span className="details-value">{safeGet(request, 'status') || 'pending'}</span>
-          
-          <span className="details-label">类型:</span>
-          <span className="details-value">{safeGet(request, 'requestType')}</span>
-          
-          <span className="details-label">时间:</span>
-          <span className="details-value">
-            {request.timestamp ? new Date(request.timestamp).toLocaleString() : ''}
-          </span>
-          
-          {request.duration && (
-            <>
-              <span className="details-label">耗时:</span>
-              <span className="details-value">{request.duration}ms</span>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* 请求头 */}
-      {renderHeaders(request.headers || request.requestHeaders, '请求头')}
-
-      {/* 请求体 */}
-      {(request.body || request.requestBody) && (
-        <div className="details-section">
-          <h3>
-            请求体
-            <button 
-              className="copy-btn"
-              onClick={() => {
-                // 优先使用解析后的body，其次使用原始的requestBody
-                const body = request.body || request.requestBody
-                const text = typeof body === 'string' ? body : formatJSON(body)
-                copyToClipboard(text, '请求体')
-              }}
-              style={{ marginLeft: '8px', fontSize: '10px', padding: '2px 6px' }}
-            >
-              复制
-            </button>
-          </h3>
-          <div className="json-display">
-            {(() => {
+      {/* 子标签页 */}
+      <div className="details-tabs" style={{ marginBottom: '8px', padding: 0 }}>
+        {availableTabs.map(tab => (
+          <button
+            key={tab.id}
+            className={`tab-button ${activeSubTab === tab.id ? 'active' : ''}`}
+            onClick={() => setActiveSubTab(tab.id)}
+            style={{ padding: '6px 8px' }}
+            disabled={!tab.enabled}
+          >
+            {tab.label}
+          </button>
+        ))}
+        
+        {/* 操作按钮 */}
+        <div className="action-buttons" style={{ marginLeft: 'auto' }}>
+          <button className="action-btn" onClick={handleResend}>
+            重新发送请求
+          </button>
+          <button
+            className="action-btn secondary"
+            onClick={() => {
+              const headers = request.headers || request.requestHeaders || {}
+              const headerString = Array.isArray(headers)
+                ? headers.map(h => `-H '${h.name}: ${h.value}'`).join(' ')
+                : Object.entries(headers).map(([k,v]) => `-H '${k}: ${v}'`).join(' ')
+              
               const body = request.body || request.requestBody
-              if (typeof body === 'string') {
-                return body
-              }
-              return formatJSON(body)
-            })()}
-          </div>
+              const bodyString = body ? ` -d '${typeof body === 'string' ? body : JSON.stringify(body)}'` : ''
+              
+              const curlCommand = `curl -X ${request.method || 'GET'} '${request.url}'${headerString ? ' ' + headerString : ''}${bodyString}`
+              copyToClipboard(curlCommand, 'cURL命令')
+            }}
+          >
+            复制为cURL
+          </button>
         </div>
-      )}
-
-      {/* 响应头 */}
-      {renderHeaders(request.responseHeaders, '响应头')}
-
-      {/* 响应内容 */}
-      {request.response && (
-        <div className="details-section">
-          <h3>
-            响应内容
-            <button 
-              className="copy-btn"
-              onClick={() => {
-                const text = typeof request.response === 'string' ? request.response : formatJSON(request.response)
-                copyToClipboard(text, '响应内容')
-              }}
-              style={{ marginLeft: '8px', fontSize: '10px', padding: '2px 6px' }}
-            >
-              复制
-            </button>
-          </h3>
-          <div className="json-display">
-            {typeof request.response === 'string' ? request.response : formatJSON(request.response)}
-          </div>
-        </div>
-      )}
-
-      {/* 操作按钮 */}
-      <div className="action-buttons">
-        <button className="action-btn" onClick={handleResend}>
-          重新发送请求
-        </button>
-        <button 
-          className="action-btn secondary"
-          onClick={() => {
-            const headers = request.headers || request.requestHeaders || {}
-            const headerString = Array.isArray(headers) 
-              ? headers.map(h => `-H '${h.name}: ${h.value}'`).join(' ')
-              : Object.entries(headers).map(([k,v]) => `-H '${k}: ${v}'`).join(' ')
-            
-            const body = request.body || request.requestBody
-            const bodyString = body ? ` -d '${typeof body === 'string' ? body : JSON.stringify(body)}'` : ''
-            
-            const curlCommand = `curl -X ${request.method || 'GET'} '${request.url}'${headerString ? ' ' + headerString : ''}${bodyString}`
-            copyToClipboard(curlCommand, 'cURL命令')
-          }}
-        >
-          复制为cURL
-        </button>
       </div>
+
+      {activeSubTab === 'basic' && (
+        <div className="details-section">
+          <h3>基本信息</h3>
+          <div className="details-grid">
+            <span className="details-label">URL:</span>
+            <span className="details-value">
+              {safeGet(request, 'url')}
+              <button 
+                className="copy-btn"
+                onClick={() => copyToClipboard(safeGet(request, 'url'), 'URL')}
+                style={{ marginLeft: '8px', fontSize: '10px', padding: '2px 6px' }}
+              >
+                复制
+              </button>
+            </span>
+            <span className="details-label">方法:</span>
+            <span className="details-value">{safeGet(request, 'method')}</span>
+            <span className="details-label">状态:</span>
+            <span className="details-value">{safeGet(request, 'status') || 'pending'}</span>
+            <span className="details-label">类型:</span>
+            <span className="details-value">{safeGet(request, 'requestType')}</span>
+            <span className="details-label">时间:</span>
+            <span className="details-value">
+              {request.timestamp ? new Date(request.timestamp).toLocaleString() : ''}
+            </span>
+            {request.duration && (
+              <>
+                <span className="details-label">耗时:</span>
+                <span className="details-value">{request.duration}ms</span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeSubTab === 'reqHeaders' && (
+        renderHeaders(request.headers || request.requestHeaders, '请求头')
+      )}
+
+      {activeSubTab === 'reqBody' && (
+        (request.body || request.requestBody) ? (
+          <div className="details-section">
+            <h3>
+              请求体
+              <button 
+                className="copy-btn"
+                onClick={() => {
+                  const body = request.body || request.requestBody
+                  const text = typeof body === 'string' ? body : formatJSON(body)
+                  copyToClipboard(text, '请求体')
+                }}
+                style={{ marginLeft: '8px', fontSize: '10px', padding: '2px 6px' }}
+              >
+                复制
+              </button>
+            </h3>
+            <div className="json-display">
+              {(() => {
+                const body = request.body || request.requestBody
+                if (typeof body === 'string') {
+                  return body
+                }
+                return formatJSON(body)
+              })()}
+            </div>
+          </div>
+        ) : null
+      )}
+
+      {activeSubTab === 'resHeaders' && (
+        renderHeaders(request.responseHeaders, '响应头')
+      )}
+
+      {activeSubTab === 'response' && (
+        request.response ? (
+          <div className="details-section">
+            <h3>
+              响应内容
+              <button 
+                className="copy-btn"
+                onClick={() => {
+                  const text = typeof request.response === 'string' ? request.response : formatJSON(request.response)
+                  copyToClipboard(text, '响应内容')
+                }}
+                style={{ marginLeft: '8px', fontSize: '10px', padding: '2px 6px' }}
+              >
+                复制
+              </button>
+            </h3>
+            <div className="json-display">
+              {typeof request.response === 'string' ? request.response : formatJSON(request.response)}
+            </div>
+          </div>
+        ) : null
+      )}
     </div>
   )
 })

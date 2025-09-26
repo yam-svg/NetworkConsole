@@ -61,6 +61,7 @@ console.log('🔗 网络控制台 Content Script 开始加载:', window.location
       const requestId = generateRequestId();
       const timestamp = Date.now();
       const method = init.method || 'GET';
+      const MAX_BODY_SIZE = 200 * 1024; // 200KB 上限，避免卡顿
       
       const requestData = {
         id: requestId,
@@ -82,11 +83,42 @@ console.log('🔗 网络控制台 Content Script 开始加载:', window.location
         const response = await originalFetch.call(this, url, init);
         const endTime = performance.now();
         
-        // 更新请求状态
+        // 读取可访问的响应头与内容（受CORS限制，opaque响应不可读）
+        let responseText = null;
+        let responseHeaders = {};
+        try {
+          response.headers.forEach((value, key) => {
+            responseHeaders[key] = value;
+          });
+        } catch {}
+
+        try {
+          const cloned = response.clone();
+          const contentType = (cloned.headers && cloned.headers.get('content-type')) || '';
+          if (contentType.includes('application/json')) {
+            try {
+              const data = await cloned.json();
+              responseText = JSON.stringify(data, null, 2);
+            } catch {
+              responseText = await cloned.text();
+            }
+          } else {
+            responseText = await cloned.text();
+          }
+          if (typeof responseText === 'string' && responseText.length > MAX_BODY_SIZE) {
+            responseText = responseText.slice(0, MAX_BODY_SIZE) + '...内容过大已截断';
+          }
+        } catch (readErr) {
+          // 无法读取（多为跨域 opaque），保持为空
+        }
+
+        // 更新请求状态（包含可读的响应体/头）
         sendNetworkRequest({
           ...requestData,
           status: response.status,
-          duration: Math.round(endTime - startTime)
+          duration: Math.round(endTime - startTime),
+          response: responseText,
+          responseHeaders
         });
         
         return response;
