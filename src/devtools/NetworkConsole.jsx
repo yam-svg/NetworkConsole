@@ -6,6 +6,7 @@ import RequestDetails from './components/RequestDetails'
 import RequestEditor from './components/RequestEditor'
 
 function NetworkConsole() {
+  const MAX_REQUESTS = 50
   const [requests, setRequests] = useState([])
   const [selectedRequest, setSelectedRequest] = useState(null)
   const [filter, setFilter] = useState('')
@@ -49,7 +50,7 @@ function NetworkConsole() {
             return updated
           } else {
             // 添加新请求
-            return [message.data, ...prev]
+            return [message.data, ...prev].slice(0, MAX_REQUESTS)
           }
         })
       }
@@ -105,7 +106,7 @@ function NetworkConsole() {
         
         if (response && response.success && response.requests) {
           console.log('📚 加载了', response.requests.length, '个存储的请求')
-          setRequests(response.requests)
+          setRequests(response.requests.slice(0, MAX_REQUESTS))
         } else {
           console.warn('加载存储的请求失败:', response)
         }
@@ -214,8 +215,8 @@ function NetworkConsole() {
             source: 'resend'
           }
           
-          // 添加到请求列表
-          setRequests(prev => [newRequest, ...prev])
+          // 添加到请求列表并限制数量
+          setRequests(prev => [newRequest, ...prev].slice(0, MAX_REQUESTS))
           
           // 自动选择新请求
           setSelectedRequest(newRequest)
