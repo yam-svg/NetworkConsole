@@ -3,11 +3,13 @@ console.log('🚀 网络控制台 Background Script 已加载')
 
 // 内存管理配置
 const MEMORY_CONFIG = {
-  MAX_REQUESTS_IN_MEMORY: 500,        // 内存中最大请求数
-  MAX_STORED_REQUESTS: 1000,         // 存储中最大请求数
-  REQUEST_CLEANUP_INTERVAL: 30000,   // 清理间隔 (30秒)
-  REQUEST_TTL: 300000,               // 请求生存时间 (5分钟)
-  BATCH_CLEANUP_SIZE: 100            // 批量清理大小
+  MAX_REQUESTS_IN_MEMORY: 100,        // 减少内存中最大请求数
+  MAX_STORED_REQUESTS: 200,          // 减少存储中最大请求数
+  REQUEST_CLEANUP_INTERVAL: 15000,   // 增加清理频率 (15秒)
+  REQUEST_TTL: 180000,               // 减少请求生存时间 (3分钟)
+  BATCH_CLEANUP_SIZE: 50,            // 减少批量清理大小
+  MAX_RESPONSE_SIZE: 50000,          // 最大响应内容大小 (50KB)
+  MAX_REQUEST_BODY_SIZE: 10000       // 最大请求体大小 (10KB)
 }
 
 // 请求缓存 - 使用Map提高性能
@@ -92,12 +94,25 @@ function addRequestToCache(requestId, requestData) {
     performMemoryCleanup()
   }
   
+  // 限制响应内容大小
+  if (requestData.response && typeof requestData.response === 'string' && requestData.response.length > MEMORY_CONFIG.MAX_RESPONSE_SIZE) {
+    requestData.response = requestData.response.substring(0, MEMORY_CONFIG.MAX_RESPONSE_SIZE) + '...内容过大已截断'
+  }
+  
+  // 限制请求体大小
+  if (requestData.body && typeof requestData.body === 'string' && requestData.body.length > MEMORY_CONFIG.MAX_REQUEST_BODY_SIZE) {
+    requestData.body = requestData.body.substring(0, MEMORY_CONFIG.MAX_REQUEST_BODY_SIZE) + '...内容过大已截断'
+  }
+  
   requestsCache.set(requestId, {
     ...requestData,
     createdAt: Date.now()
   })
   
-  console.log(`📊 内存中的请求数: ${requestsCache.size}`)
+  // 只在必要时输出日志
+  if (requestsCache.size % 20 === 0) {
+    console.log(`📊 内存中的请求数: ${requestsCache.size}`)
+  }
 }
 
 function getRequestFromCache(requestId) {
@@ -141,18 +156,31 @@ function performMemoryCleanup() {
   console.log(`🧹 内存清理完成，清理了 ${cleanedCount} 个请求，剩余 ${requestsCache.size} 个`)
 }
 
-// 定期清理任务
+// 定期清理任务和内存监控
 setInterval(() => {
   const now = Date.now()
   if (now - lastCleanupTime > MEMORY_CONFIG.REQUEST_CLEANUP_INTERVAL) {
     performMemoryCleanup()
   }
+  
+  // 内存监控：如果请求数量过多，强制清理
+  if (requestsCache.size > MEMORY_CONFIG.MAX_REQUESTS_IN_MEMORY * 1.5) {
+    console.warn('⚠️ 内存使用过高，执行强制清理')
+    requestsCache.clear()
+  }
 }, MEMORY_CONFIG.REQUEST_CLEANUP_INTERVAL)
+
+// 监控内存使用，定期输出统计信息
+setInterval(() => {
+  if (requestsCache.size > 0) {
+    console.log(`📋 内存统计: 请求数量=${requestsCache.size}, 限制=${MEMORY_CONFIG.MAX_REQUESTS_IN_MEMORY}`)
+  }
+}, 60000) // 每分钟输出一次
 
 // 安全地序列化对象，避免循环引用和不可序列化的值
 function safeSerialize(obj, depth = 0) {
   // 防止深度过大导致栈溢出
-  if (depth > 10) {
+  if (depth > 5) { // 减少最大深度
     return '[对象层级过深]'
   }
   
@@ -160,12 +188,22 @@ function safeSerialize(obj, depth = 0) {
     return obj
   }
   
+  // 字符串长度限制
+  if (typeof obj === 'string') {
+    if (obj.length > 5000) {
+      return obj.substring(0, 5000) + '...内容过长已截断'
+    }
+    return obj
+  }
+  
   // 如果是FormData，转换为对象
   if (obj instanceof FormData) {
     const formObj = {}
     try {
+      let count = 0
       for (const [key, value] of obj.entries()) {
-        formObj[key] = value
+        if (count++ > 20) break // 限制数量
+        formObj[key] = String(value).substring(0, 1000) // 限制值的长度
       }
     } catch {
       return '[FormData转换失败]'
@@ -177,8 +215,10 @@ function safeSerialize(obj, depth = 0) {
   if (obj instanceof Headers) {
     const headersObj = {}
     try {
+      let count = 0
       for (const [key, value] of obj.entries()) {
-        headersObj[key] = value
+        if (count++ > 30) break // 限制数量
+        headersObj[key] = String(value).substring(0, 1000)
       }
     } catch {
       return '[Headers转换失败]'
@@ -188,10 +228,13 @@ function safeSerialize(obj, depth = 0) {
   
   // 如果是数组，处理每个元素
   if (Array.isArray(obj)) {
-    return obj.slice(0, 100).map(item => { // 限制数组大小
+    return obj.slice(0, 50).map(item => { // 减少数组大小限制
       if (item && typeof item === 'object' && item.name && item.value) {
         // webRequest headers 格式
-        return { name: String(item.name), value: String(item.value) }
+        return {
+          name: String(item.name).substring(0, 200),
+          value: String(item.value).substring(0, 1000)
+        }
       }
       return safeSerialize(item, depth + 1)
     })
@@ -202,17 +245,19 @@ function safeSerialize(obj, depth = 0) {
     const result = {}
     let propCount = 0
     for (const [key, value] of Object.entries(obj)) {
-      if (propCount++ > 50) break // 限制属性数量
+      if (propCount++ > 30) break // 减少属性数量限制
       
       try {
         if (value === null || value === undefined) {
           result[key] = value
-        } else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+        } else if (typeof value === 'string') {
+          result[key] = value.length > 2000 ? value.substring(0, 2000) + '...截断' : value
+        } else if (typeof value === 'number' || typeof value === 'boolean') {
           result[key] = value
         } else if (typeof value === 'object') {
           result[key] = safeSerialize(value, depth + 1)
         } else {
-          result[key] = String(value)
+          result[key] = String(value).substring(0, 500)
         }
       } catch (err) {
         result[key] = '[不可序列化的值]'
@@ -234,24 +279,35 @@ function parseRequestBody(requestBody) {
     // webRequest API的requestBody格式
     if (requestBody.raw && Array.isArray(requestBody.raw)) {
       let combinedBody = ''
+      let totalSize = 0
       
       for (const rawData of requestBody.raw) {
+        if (totalSize > MEMORY_CONFIG.MAX_REQUEST_BODY_SIZE) {
+          combinedBody += '...请求体过大已截断'
+          break
+        }
+        
         if (rawData.bytes) {
           // 将ArrayBuffer转换为字符串
           if (rawData.bytes instanceof ArrayBuffer) {
             const decoder = new TextDecoder('utf-8')
-            combinedBody += decoder.decode(rawData.bytes)
+            const decoded = decoder.decode(rawData.bytes)
+            combinedBody += decoded.substring(0, MEMORY_CONFIG.MAX_REQUEST_BODY_SIZE - totalSize)
+            totalSize += decoded.length
           } else if (typeof rawData.bytes === 'object') {
             // 如果是类似 {0: 123, 1: 34, ...} 的格式
             const byteArray = Object.values(rawData.bytes)
             if (byteArray.length > 0 && typeof byteArray[0] === 'number') {
-              const uint8Array = new Uint8Array(byteArray)
+              const uint8Array = new Uint8Array(byteArray.slice(0, Math.min(byteArray.length, MEMORY_CONFIG.MAX_REQUEST_BODY_SIZE)))
               const decoder = new TextDecoder('utf-8')
-              combinedBody += decoder.decode(uint8Array)
+              const decoded = decoder.decode(uint8Array)
+              combinedBody += decoded
+              totalSize += decoded.length
             }
           }
         } else if (rawData.file) {
           combinedBody += '[文件内容]'
+          totalSize += 10
         }
       }
       
@@ -261,19 +317,30 @@ function parseRequestBody(requestBody) {
     // 如果有formData
     if (requestBody.formData) {
       const formDataObj = {}
+      let count = 0
       for (const [key, values] of Object.entries(requestBody.formData)) {
-        formDataObj[key] = Array.isArray(values) ? values.join(', ') : values
+        if (count++ > 20) break // 限制数量
+        const value = Array.isArray(values) ? values.join(', ') : values
+        formDataObj[key] = String(value).substring(0, 1000) // 限制长度
       }
-      return JSON.stringify(formDataObj, null, 2)
+      const jsonStr = JSON.stringify(formDataObj, null, 2)
+      return jsonStr.length > MEMORY_CONFIG.MAX_REQUEST_BODY_SIZE
+        ? jsonStr.substring(0, MEMORY_CONFIG.MAX_REQUEST_BODY_SIZE) + '...截断'
+        : jsonStr
     }
     
     // 如果是字符串格式
     if (typeof requestBody === 'string') {
-      return requestBody
+      return requestBody.length > MEMORY_CONFIG.MAX_REQUEST_BODY_SIZE
+        ? requestBody.substring(0, MEMORY_CONFIG.MAX_REQUEST_BODY_SIZE) + '...截断'
+        : requestBody
     }
     
     // 其他格式尝试JSON序列化
-    return JSON.stringify(requestBody, null, 2)
+    const jsonStr = JSON.stringify(requestBody, null, 2)
+    return jsonStr.length > MEMORY_CONFIG.MAX_REQUEST_BODY_SIZE
+      ? jsonStr.substring(0, MEMORY_CONFIG.MAX_REQUEST_BODY_SIZE) + '...截断'
+      : jsonStr
     
   } catch (error) {
     console.warn('解析请求体失败:', error)
@@ -308,20 +375,9 @@ function normalizeRequestType(requestType, webRequestType) {
 
 chrome.webRequest.onBeforeRequest.addListener(
   (details) => {
-    // 详细的调试信息
-    console.log('🔍 webRequest onBeforeRequest:', {
-      type: details.type,
-      method: details.method,
-      url: details.url,
-      tabId: details.tabId,
-      requestId: details.requestId,
-      initiator: details.initiator
-    })
-    
     // 过滤掉不需要的请求类型
     const skipTypes = ['main_frame', 'sub_frame', 'beacon']
     if (skipTypes.includes(details.type)) {
-      console.log('⚠️ 跳过请求类型:', details.type, details.url)
       return
     }
     
@@ -330,14 +386,12 @@ chrome.webRequest.onBeforeRequest.addListener(
         details.url.startsWith('chrome-extension://') ||
         details.url.startsWith('moz-extension://') ||
         details.url.startsWith('edge://')) {
-      console.log('⚠️ 跳过浏览器内部请求:', details.url)
       return
     }
     
     // 检查tabId是否有效
     const tabId = details.tabId
     if (tabId && tabId < 0) {
-      console.log('⚠️ 跳过无效tabId:', tabId, details.url)
       return
     }
     
@@ -358,8 +412,11 @@ chrome.webRequest.onBeforeRequest.addListener(
     
     addRequestToCache(requestId, requestData)
     
-    // 立即广播，不等待content script
-    console.log('✅ webRequest 捕获请求:', method, url, '类型:', requestData.requestType, '来源:', details.initiator)
+    // 减少日志输出，只记录重要信息
+    if (requestsCache.size % 50 === 0) {
+      console.log(`✅ webRequest 捕获请求: ${method} ${url.substring(0, 100)}...`)
+    }
+    
     handleNetworkRequest(requestData, { tab: { id: tabId > 0 ? tabId : null } })
   },
   { urls: ['<all_urls>'] },
@@ -379,7 +436,6 @@ chrome.webRequest.onBeforeSendHeaders.addListener(
           cachedRequest.headers[header.name.toLowerCase()] = header.value
         })
       }
-      console.log('📋 webRequest 请求头已捕获:', cachedRequest.method, cachedRequest.url)
       
       // 检查tabId有效性
       const tabId = details.tabId
@@ -401,17 +457,16 @@ chrome.webRequest.onCompleted.addListener(
       cachedRequest.status = statusCode
       cachedRequest.responseHeaders = safeSerialize(responseHeaders) // 安全序列化
       cachedRequest.duration = cachedRequest.endTime - cachedRequest.timestamp
-      console.log('✅ webRequest 请求完成:', cachedRequest.method, cachedRequest.url, statusCode)
       
       // 检查tabId有效性
       const tabId = details.tabId
       const validTabId = tabId > 0 ? tabId : null
       handleNetworkRequest(cachedRequest, { tab: { id: validTabId } })
       
-      // 延迟清理已完成的请求以节省内存
+      // 立即清理已完成的请求以节省内存
       setTimeout(() => {
         removeRequestFromCache(requestId)
-      }, 5000)
+      }, 3000) // 减少延迟时间
     }
   },
   { urls: ['<all_urls>'] },
@@ -428,17 +483,16 @@ chrome.webRequest.onErrorOccurred.addListener(
       cachedRequest.error = error
       cachedRequest.response = `请求错误: ${error}`
       cachedRequest.duration = cachedRequest.endTime - cachedRequest.timestamp
-      console.log('❌ webRequest 请求错误:', cachedRequest.method, cachedRequest.url, error)
       
       // 检查tabId有效性
       const tabId = details.tabId
       const validTabId = tabId > 0 ? tabId : null
       handleNetworkRequest(cachedRequest, { tab: { id: validTabId } })
       
-      // 清理出错的请求
+      // 立即清理出错的请求
       setTimeout(() => {
         removeRequestFromCache(requestId)
-      }, 5000)
+      }, 2000)
     }
   },
   { urls: ['<all_urls>'] }
@@ -456,10 +510,10 @@ function handleNetworkRequest(requestData, sender) {
     requestType: requestData.requestType || 'unknown'
   })
   
-  console.log('✅ 处理网络请求:', enrichedData.method, enrichedData.url, '类型:', enrichedData.requestType, '来源:', enrichedData.source)
-  
-  // 存储到本地
-  storeNetworkRequest(enrichedData)
+  // 只在请求完成或失败时才存储，减少中间状态的存储
+  if (enrichedData.status !== 'pending') {
+    storeNetworkRequest(enrichedData)
+  }
   
   // 转发给DevTools页面（如果开启）
   broadcastToDevTools(enrichedData)
@@ -490,30 +544,26 @@ function storeNetworkRequest(requestData) {
 
 // 广播给DevTools
 function broadcastToDevTools(requestData) {
-  console.log('广播网络请求到DevTools:', requestData.method, requestData.url)
-  
-  // 向当前标签页发送消息（如果DevTools开着）
   // 检查tabId是否有效（必须是正整数）
   const tabId = requestData.tabId
   if (tabId && typeof tabId === 'number' && tabId > 0 && Number.isInteger(tabId)) {
     chrome.tabs.sendMessage(tabId, {
       type: 'NETWORK_REQUEST_UPDATE',
       data: safeSerialize(requestData) // 安全序列化
-    }).catch((error) => {
+    }).catch(() => {
       // 忽略错误，标签页可能没有content script
-      console.log('发送消息到标签页失败:', tabId, error.message)
     })
-  } else {
-    console.warn('无效的tabId:', tabId, '跳过发送消息到标签页')
   }
   
-  // 同时通过存储方式让DevTools能够获取最新数据
-  chrome.storage.local.set({
-    latestNetworkRequest: safeSerialize({
-      ...requestData,
-      timestamp: Date.now()
+  // 只在重要状态更新时才更新存储
+  if (requestData.status !== 'pending') {
+    chrome.storage.local.set({
+      latestNetworkRequest: safeSerialize({
+        ...requestData,
+        timestamp: Date.now()
+      })
     })
-  })
+  }
 }
 
 // 重新发送请求
