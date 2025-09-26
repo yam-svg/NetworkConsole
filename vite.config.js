@@ -11,7 +11,7 @@ const __dirname = dirname(__filename)
 export default defineConfig({
   plugins: [react()],
   build: {
-    outDir: 'dist',
+    outDir: 'NetworkConsole',
     rollupOptions: {
       input: {
         popup: resolve(__dirname, 'popup.html'),
