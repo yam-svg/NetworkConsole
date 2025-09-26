@@ -109,6 +109,80 @@ const BodyEditor = ({ body, bodyType, onBodyChange, onBodyTypeChange }) => {
   if (bodyType === 'raw' || bodyType === 'json') {
     return (
       <div className="body-editor">
+        <div className="body-editor-toolbar">
+          <button
+            className="btn"
+            onClick={() => {
+              try {
+                const obj = JSON.parse(body)
+                onBodyChange(JSON.stringify(obj, null, 2))
+              } catch {
+                // 非JSON忽略
+              }
+            }}
+          >
+            格式化JSON
+          </button>
+          <button
+            className="btn"
+            onClick={() => {
+              try {
+                const obj = JSON.parse(body)
+                onBodyChange(JSON.stringify(obj))
+              } catch {
+                // 非JSON忽略
+              }
+            }}
+          >
+            压缩
+          </button>
+          <button
+            className="btn"
+            onClick={() => {
+              try {
+                const obj = JSON.parse(body)
+                const sortKeys = (value) => {
+                  if (Array.isArray(value)) return value.map(sortKeys)
+                  if (value && typeof value === 'object') {
+                    const sorted = {}
+                    Object.keys(value).sort().forEach(k => {
+                      sorted[k] = sortKeys(value[k])
+                    })
+                    return sorted
+                  }
+                  return value
+                }
+                const sorted = sortKeys(obj)
+                onBodyChange(JSON.stringify(sorted, null, 2))
+              } catch {
+                // 非JSON忽略
+              }
+            }}
+          >
+            键排序
+          </button>
+          {onBodyTypeChange && (
+            <button
+              className="btn"
+              onClick={() => {
+                // 尝试把 JSON 转为表单键值对
+                try {
+                  const obj = JSON.parse(body || '{}')
+                  // 简单对象可直接切换
+                  if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+                    onBodyTypeChange('form')
+                  } else {
+                    onBodyTypeChange('form')
+                  }
+                } catch {
+                  onBodyTypeChange('form')
+                }
+              }}
+            >
+              转为表单
+            </button>
+          )}
+        </div>
         <textarea
           value={body}
           onChange={(e) => onBodyChange(e.target.value)}

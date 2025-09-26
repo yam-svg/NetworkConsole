@@ -205,6 +205,11 @@ const RequestEditor = ({ request, onSendRequest, onResponse }) => {
     }
   }
 
+  const handleBodyTypeChange = (type) => {
+    setActiveBodyType(type)
+    setEditedRequest({ ...editedRequest, bodyType: type })
+  }
+
   if (!request) {
     return (
       <div className="request-editor">
@@ -283,15 +288,21 @@ const RequestEditor = ({ request, onSendRequest, onResponse }) => {
             </button>
             <button
               className={`tab-button ${activeBodyType === 'raw' ? 'active' : ''}`}
-              onClick={() => setActiveBodyType('raw')}
+              onClick={() => handleBodyTypeChange('raw')}
             >
               Raw
             </button>
             <button
               className={`tab-button ${activeBodyType === 'json' ? 'active' : ''}`}
-              onClick={() => setActiveBodyType('json')}
+              onClick={() => handleBodyTypeChange('json')}
             >
               JSON
+            </button>
+            <button
+              className={`tab-button ${activeBodyType === 'form' ? 'active' : ''}`}
+              onClick={() => handleBodyTypeChange('form')}
+            >
+              表单
             </button>
           </div>
         </div>
@@ -301,7 +312,7 @@ const RequestEditor = ({ request, onSendRequest, onResponse }) => {
             body={editedRequest.body}
             bodyType={activeBodyType}
             onBodyChange={(newBody) => setEditedRequest({ ...editedRequest, body: newBody })}
-            onBodyTypeChange={setActiveBodyType}
+            onBodyTypeChange={handleBodyTypeChange}
           />
         )}
       </div>
