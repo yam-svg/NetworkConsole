@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import PropTypes from 'prop-types'
 import BodyEditor from './BodyEditor'
 
@@ -7,6 +7,7 @@ const RequestEditor = ({ request, onSendRequest, onResponse }) => {
   const [activeBodyType, setActiveBodyType] = useState('raw')
   const [isLoading, setIsLoading] = useState(false)
   const [requestCount, setRequestCount] = useState(1) // 新增：请求次数
+  const cancelRef = useRef(false) // 发送中止标记
 
   useEffect(() => {
     if (request) {
@@ -82,6 +83,7 @@ const RequestEditor = ({ request, onSendRequest, onResponse }) => {
   const handleSend = async () => {
     if (onSendRequest && editedRequest) {
       setIsLoading(true)
+      cancelRef.current = false
       
       try {
         // 转换headers格式
@@ -99,9 +101,12 @@ const RequestEditor = ({ request, onSendRequest, onResponse }) => {
           body: editedRequest.bodyType === 'none' ? null : editedRequest.body
         }
 
-        // 批量发送请求
+        // 批量发送请求（支持中途停止）
         const results = []
         for (let i = 0; i < requestCount; i++) {
+          if (cancelRef.current) {
+            break
+          }
           try {
             const result = await new Promise((resolve, reject) => {
               chrome.runtime.sendMessage({
@@ -115,37 +120,55 @@ const RequestEditor = ({ request, onSendRequest, onResponse }) => {
                 }
               })
             })
-            results.push(result)
+            if (!cancelRef.current) {
+              results.push(result)
+            }
             
             // 如果是多次请求，稍微延迟避免请求过于密集
             if (requestCount > 1 && i < requestCount - 1) {
               await new Promise(resolve => setTimeout(resolve, 100))
             }
           } catch (error) {
-            results.push({
-              success: false,
-              error: error.message,
-              status: 'error',
-              response: error.message
-            })
+            if (!cancelRef.current) {
+              results.push({
+                success: false,
+                error: error.message,
+                status: 'error',
+                response: error.message
+              })
+            }
           }
         }
         
-        // 传递最后一个响应结果（或者第一个成功的结果）
-        const lastResult = results[results.length - 1]
-        const successResult = results.find(r => r.success) || lastResult
-        
-        if (onResponse) {
-          onResponse({
-            ...successResult,
-            batchResults: results, // 批量结果
-            totalRequests: requestCount
-          })
-        }
-        
-        // 同时调用原来的onSendRequest
-        if (onSendRequest) {
-          onSendRequest(requestToSend)
+        if (!cancelRef.current) {
+          // 传递最后一个响应结果（或者第一个成功的结果）
+          const lastResult = results[results.length - 1]
+          const successResult = results.find(r => r.success) || lastResult
+          
+          if (onResponse) {
+            onResponse({
+              ...successResult,
+              batchResults: results, // 批量结果
+              totalRequests: requestCount
+            })
+          }
+          
+          // 同时调用原来的onSendRequest
+          if (onSendRequest) {
+            onSendRequest(requestToSend)
+          }
+        } else {
+          // 用户中止
+          if (onResponse) {
+            onResponse({
+              success: false,
+              status: 'cancelled',
+              error: '已停止发送',
+              response: '已停止发送',
+              batchResults: results,
+              totalRequests: results.length
+            })
+          }
         }
         
       } catch (error) {
@@ -164,6 +187,10 @@ const RequestEditor = ({ request, onSendRequest, onResponse }) => {
         setIsLoading(false)
       }
     }
+  }
+
+  const handleCancelSend = () => {
+    cancelRef.current = true
   }
 
   const resetRequest = () => {
@@ -227,9 +254,15 @@ const RequestEditor = ({ request, onSendRequest, onResponse }) => {
               className="request-count-input"
               title="请求次数"
             />
-            <button onClick={handleSend} className="send-button" disabled={isLoading}>
-              {isLoading ? '发送中...' : '发送请求'}
-            </button>
+            {isLoading ? (
+              <button onClick={handleCancelSend} className="send-button danger">
+                停止
+              </button>
+            ) : (
+              <button onClick={handleSend} className="send-button">
+                发送请求
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -313,9 +346,15 @@ const RequestEditor = ({ request, onSendRequest, onResponse }) => {
         <button onClick={resetRequest} className="reset-button">
           重置
         </button>
-        <button onClick={handleSend} className="send-button primary" disabled={isLoading}>
-          {isLoading ? '发送中...' : '发送请求'}
-        </button>
+        {isLoading ? (
+          <button onClick={handleCancelSend} className="send-button danger">
+            停止
+          </button>
+        ) : (
+          <button onClick={handleSend} className="send-button primary">
+            发送请求
+          </button>
+        )}
       </div>
     </div>
   )
