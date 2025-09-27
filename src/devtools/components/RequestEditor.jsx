@@ -1,12 +1,16 @@
 import { useState, useEffect, useRef } from 'react'
 import PropTypes from 'prop-types'
 import BodyEditor from './BodyEditor'
+import { parseRequestText, exampleTexts } from '../utils/requestParser'
 
 const RequestEditor = ({ request, onSendRequest, onResponse }) => {
   const [editedRequest, setEditedRequest] = useState(null)
   const [activeBodyType, setActiveBodyType] = useState('raw')
   const [isLoading, setIsLoading] = useState(false)
   const [requestCount, setRequestCount] = useState(1) // 新增：请求次数
+  const [showImportModal, setShowImportModal] = useState(false) // 导入模态框状态
+  const [importText, setImportText] = useState('') // 导入文本
+  const [importError, setImportError] = useState('') // 导入错误信息
   const cancelRef = useRef(false) // 发送中止标记
 
   useEffect(() => {
@@ -260,6 +264,72 @@ const RequestEditor = ({ request, onSendRequest, onResponse }) => {
     setEditedRequest({ ...editedRequest, bodyType: type })
   }
 
+  // 处理导入请求
+  const handleImportRequest = () => {
+    setShowImportModal(true)
+    setImportText('')
+    setImportError('')
+  }
+
+  // 关闭导入模态框
+  const handleCloseImport = () => {
+    setShowImportModal(false)
+    setImportText('')
+    setImportError('')
+  }
+
+  // 执行导入
+  const handleDoImport = () => {
+    try {
+      setImportError('')
+      const parsed = parseRequestText(importText)
+      
+      // 转换headers为编辑器格式
+      const headers = Object.entries(parsed.headers || {}).map(([key, value]) => ({
+        key,
+        value: String(value),
+        enabled: true
+      }))
+      
+      // 检测body类型
+      let bodyType = 'raw'
+      if (!parsed.body) {
+        bodyType = 'none'
+      } else {
+        try {
+          JSON.parse(parsed.body)
+          bodyType = 'json'
+        } catch {
+          if (parsed.body.includes('=') && parsed.body.includes('&')) {
+            bodyType = 'form'
+          }
+        }
+      }
+      
+      // 更新请求数据
+      setEditedRequest({
+        url: parsed.url || '',
+        method: parsed.method || 'GET',
+        headers,
+        body: parsed.body || '',
+        bodyType
+      })
+      
+      setActiveBodyType(bodyType)
+      setShowImportModal(false)
+      setImportText('')
+      
+    } catch (error) {
+      setImportError(error.message || '解析失败，请检查格式是否正确')
+    }
+  }
+
+  // 插入示例
+  const handleInsertExample = (type) => {
+    setImportText(exampleTexts[type])
+    setImportError('')
+  }
+
   if (!request) {
     return (
       <div className="request-editor">
@@ -299,6 +369,13 @@ const RequestEditor = ({ request, onSendRequest, onResponse }) => {
             placeholder="请求URL"
             className="url-input"
           />
+          <button 
+            onClick={handleImportRequest}
+            className="import-button"
+            title="导入cURL或fetch请求"
+          >
+            导入请求
+          </button>
           <div className="send-controls">
             <input
               type="number"
@@ -417,6 +494,66 @@ const RequestEditor = ({ request, onSendRequest, onResponse }) => {
           </button>
         )}
       </div>
+
+      {/* 导入请求模态框 */}
+      {showImportModal && (
+        <div className="import-modal-overlay" onClick={handleCloseImport}>
+          <div className="import-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="import-modal-header">
+              <h3>导入请求</h3>
+              <button className="close-button" onClick={handleCloseImport}>×</button>
+            </div>
+            
+            <div className="import-modal-body">
+              <p className="import-description">
+                粘贴cURL命令或JSON配置，自动解析为请求参数：
+              </p>
+              
+              <div className="example-buttons">
+                <button 
+                  className="example-btn"
+                  onClick={() => handleInsertExample('curl')}
+                >
+                  cURL示例
+                </button>
+                <button 
+                  className="example-btn"
+                  onClick={() => handleInsertExample('json')}
+                >
+                  JSON示例
+                </button>
+              </div>
+              
+              <textarea
+                className="import-textarea"
+                value={importText}
+                onChange={(e) => setImportText(e.target.value)}
+                placeholder="在此粘贴cURL命令或JSON配置..."
+                rows={12}
+              />
+              
+              {importError && (
+                <div className="import-error">
+                  {importError}
+                </div>
+              )}
+            </div>
+            
+            <div className="import-modal-footer">
+              <button className="cancel-button" onClick={handleCloseImport}>
+                取消
+              </button>
+              <button 
+                className="import-button-confirm"
+                onClick={handleDoImport}
+                disabled={!importText.trim()}
+              >
+                导入
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
