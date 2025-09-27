@@ -3,7 +3,6 @@ import { useState, useEffect } from 'react'
 function PopupApp() {
   const [requestCount, setRequestCount] = useState(0)
   const [activeTab, setActiveTab] = useState(null)
-  const [isCapturing, setIsCapturing] = useState(true)
   const [notification, setNotification] = useState(null)
 
   // 显示通知函数
@@ -28,32 +27,7 @@ function PopupApp() {
       const requests = result.networkRequests || []
       setRequestCount(requests.length)
     })
-
-    // 获取设置
-    chrome.storage.sync.get(['settings'], (result) => {
-      const settings = result.settings || {}
-      setIsCapturing(settings.captureEnabled !== false)
-    })
   }, [])
-
-  const handleToggleCapture = () => {
-    const newState = !isCapturing
-    setIsCapturing(newState)
-    
-    chrome.storage.sync.set({
-      settings: {
-        captureEnabled: newState
-      }
-    })
-  }
-
-  const handleClearRequests = () => {
-    chrome.runtime.sendMessage({ type: 'CLEAR_REQUESTS' }, (response) => {
-      if (response.success) {
-        setRequestCount(0)
-      }
-    })
-  }
 
   const handleOpenDevTools = () => {
     // 指导用户打开DevTools
@@ -86,32 +60,9 @@ function PopupApp() {
         
         <div className="stats-section">
           <div className="stat-item">
-            <span className="stat-label">监控状态:</span>
-            <span className={`stat-value ${isCapturing ? 'active' : 'inactive'}`}>
-              {isCapturing ? '✅ 已启用' : '❌ 已禁用'}
-            </span>
-          </div>
-          
-          <div className="stat-item">
             <span className="stat-label">捕获请求:</span>
             <span className="stat-value">{requestCount} 个</span>
           </div>
-        </div>
-
-        <div className="button-group">
-          <button 
-            className={`toggle-btn ${isCapturing ? 'stop' : 'start'}`}
-            onClick={handleToggleCapture}
-          >
-            {isCapturing ? '停止监控' : '开始监控'}
-          </button>
-          
-          <button 
-            className="action-btn secondary"
-            onClick={handleClearRequests}
-          >
-            清空请求
-          </button>
         </div>
         
         <div className="main-actions">
