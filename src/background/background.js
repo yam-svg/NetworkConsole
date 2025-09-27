@@ -503,12 +503,17 @@ function handleNetworkRequest(requestData, sender) {
   // 添加发送者信息并安全序列化
   const enrichedData = safeSerialize({
     ...requestData,
-    tabId: sender.tab?.id,
+    tabId: sender.tab?.id || requestData.tabId, // 优先使用sender的tabId，否则使用请求数据中的tabId
     frameId: sender.frameId,
     source: requestData.source || 'unknown',
     // 确保请求类型正确
     requestType: requestData.requestType || 'unknown'
   })
+  
+  // 记录请求的标签页信息（减少日志输出）
+  if (enrichedData.tabId && requestsCache.size % 10 === 0) {
+    console.log(`🏷️ 处理来自标签页 ${enrichedData.tabId} 的请求: ${enrichedData.method} ${enrichedData.url.substring(0, 50)}...`)
+  }
   
   // 只在请求完成或失败时才存储，减少中间状态的存储
   if (enrichedData.status !== 'pending') {

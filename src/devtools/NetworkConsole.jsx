@@ -27,6 +27,10 @@ function NetworkConsole() {
   useEffect(() => {
     console.log('🚀 NetworkConsole 组件初始化')
     
+    // 获取当前检查的标签页ID
+    const currentTabId = chrome.devtools?.inspectedWindow?.tabId
+    console.log('🏷️ 当前检查标签页ID:', currentTabId)
+    
     // 加载存储的请求数据
     loadStoredRequests()
     
@@ -39,6 +43,12 @@ function NetworkConsole() {
       }
       
       if (message.type === 'NETWORK_REQUEST') {
+        // 检查是否为当前标签页的请求
+        if (message.data.tabId && message.data.tabId !== currentTabId) {
+          console.log('🙅 跳过其他标签页的请求:', message.data.tabId, '当前:', currentTabId)
+          return
+        }
+        
         console.log('📨 收到网络请求:', message.data)
         setRequests(prev => {
           // 检查是否已存在（更新或添加）
@@ -74,6 +84,12 @@ function NetworkConsole() {
       if (area === 'local' && changes.latestNetworkRequest) {
         const newRequest = changes.latestNetworkRequest.newValue
         if (newRequest) {
+          // 检查是否为当前标签页的请求
+          if (newRequest.tabId && newRequest.tabId !== currentTabId) {
+            console.log('🙅 跳过其他标签页的存储请求:', newRequest.tabId, '当前:', currentTabId)
+            return
+          }
+          
           console.log('💾 从存储收到网络请求:', newRequest)
           handleMessage({ type: 'NETWORK_REQUEST', data: newRequest })
         }
