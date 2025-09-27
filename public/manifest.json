@@ -7,8 +7,10 @@
   "author": "超大只番薯",
   "homepage_url": "https://gitee.com/bigfanshu/NetworkConsole",
   "icons": {
-    "48": "icons/icon_48x48.png",
-    "128": "icons/icon_128x128.png",
+    "16": "icons/icon_256x256.png",
+    "32": "icons/icon_256x256.png",
+    "48": "icons/icon_256x256.png",
+    "128": "icons/icon_256x256.png",
     "256": "icons/icon_256x256.png"
   },
   "permissions": [
@@ -27,8 +29,10 @@
     "default_popup": "popup.html",
     "default_title": "__MSG_extensionTitle__",
     "default_icon": {
-      "48": "icons/icon_48x48.png",
-      "128": "icons/icon_128x128.png",
+      "16": "icons/icon_256x256.png",
+      "32": "icons/icon_256x256.png",
+      "48": "icons/icon_256x256.png",
+      "128": "icons/icon_256x256.png",
       "256": "icons/icon_256x256.png"
     }
   },
