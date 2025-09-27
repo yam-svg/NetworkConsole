@@ -1,69 +1,17 @@
 import { memo, useState, useMemo, useEffect } from 'react'
+import PropTypes from 'prop-types'
+import { copyToClipboardInDevTools } from '../utils/clipboard'
 
 const RequestDetails = memo(({ request, onResend }) => {
   const [copyMessage, setCopyMessage] = useState('')
   const [activeSubTab, setActiveSubTab] = useState('basic')
 
   const copyToClipboard = async (text, type) => {
-    try {
-      // 在插件环境中，优先使用 chrome.scripting API
-      if (chrome && chrome.scripting) {
-        try {
-          // 向当前标签页注入复制脚本
-          const tabs = await chrome.tabs.query({ active: true, currentWindow: true })
-          if (tabs.length > 0) {
-            await chrome.scripting.executeScript({
-              target: { tabId: tabs[0].id },
-              func: (textToCopy) => {
-                navigator.clipboard.writeText(textToCopy).catch(() => {
-                  // 备用方案
-                  const textarea = document.createElement('textarea')
-                  textarea.value = textToCopy
-                  document.body.appendChild(textarea)
-                  textarea.select()
-                  document.execCommand('copy')
-                  document.body.removeChild(textarea)
-                })
-              },
-              args: [text]
-            })
-            setCopyMessage(`${type} 已复制到剪贴板`)
-            return
-          }
-        } catch (err) {
-          console.warn('chrome.scripting 复制失败，尝试其他方法:', err)
-        }
-      }
-      
-      // 尝试现代 Clipboard API
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(text)
-        setCopyMessage(`${type} 已复制到剪贴板`)
-        return
-      }
-      
-      // 备用方案：使用传统的 execCommand
-      const textArea = document.createElement('textarea')
-      textArea.value = text
-      textArea.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0;pointer-events:none;'
-      document.body.appendChild(textArea)
-      
-      textArea.focus()
-      textArea.select()
-      textArea.setSelectionRange(0, text.length)
-      
-      const success = document.execCommand('copy')
-      document.body.removeChild(textArea)
-      
-      if (success) {
-        setCopyMessage(`${type} 已复制到剪贴板`)
-      } else {
-        // 最后的备用方案：显示文本供手动复制
-        showCopyModal(text, type)
-      }
-    } catch (err) {
-      console.error('复制失败:', err)
-      showCopyModal(text, type)
+    const success = await copyToClipboardInDevTools(text, type)
+    if (success) {
+      setCopyMessage(`${type} 已复制到剪贴板`)
+    } else {
+      setCopyMessage('请手动复制已选中的内容')
     }
     
     // 3秒后清除消息
@@ -72,86 +20,6 @@ const RequestDetails = memo(({ request, onResend }) => {
     }, 3000)
   }
   
-  const showCopyModal = (text, type) => {
-    // 创建模态框供手动复制
-    const modal = document.createElement('div')
-    modal.style.cssText = `
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0,0,0,0.5);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 10000;
-    `
-    
-    const content = document.createElement('div')
-    content.style.cssText = `
-      background: white;
-      border-radius: 8px;
-      padding: 20px;
-      max-width: 80%;
-      max-height: 80%;
-      overflow: auto;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-    `
-    
-    const closeModal = () => {
-      if (modal.parentNode) {
-        modal.parentNode.removeChild(modal)
-      }
-    }
-    
-    content.innerHTML = `
-      <h3 style="margin-top: 0; color: #333; font-size: 16px;">${type} - 手动复制</h3>
-      <p style="color: #666; margin: 10px 0; font-size: 14px;">请选中下面的文本并复制 (Ctrl+C)：</p>
-      <textarea readonly style="
-        width: 100%;
-        height: 200px;
-        font-family: monospace;
-        font-size: 12px;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        padding: 8px;
-        resize: vertical;
-        box-sizing: border-box;
-      ">${text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>
-      <div style="margin-top: 15px; text-align: right;">
-        <button style="
-          background: #007acc;
-          color: white;
-          border: none;
-          padding: 10px 16px;
-          border-radius: 4px;
-          cursor: pointer;
-          font-size: 14px;
-        ">关闭</button>
-      </div>
-    `
-    
-    const closeBtn = content.querySelector('button')
-    const textarea = content.querySelector('textarea')
-    
-    closeBtn.onclick = closeModal
-    modal.onclick = (e) => {
-      if (e.target === modal) closeModal()
-    }
-    
-    modal.appendChild(content)
-    document.body.appendChild(modal)
-    
-    // 自动选中文本
-    setTimeout(() => {
-      textarea.focus()
-      textarea.select()
-    }, 100)
-    
-    setCopyMessage('请手动复制文本内容')
-  }
-
   const formatJSON = (obj) => {
     try {
       if (typeof obj === 'string') {
@@ -431,5 +299,10 @@ const RequestDetails = memo(({ request, onResend }) => {
 })
 
 RequestDetails.displayName = 'RequestDetails'
+
+RequestDetails.propTypes = {
+  request: PropTypes.object,
+  onResend: PropTypes.func
+}
 
 export default RequestDetails

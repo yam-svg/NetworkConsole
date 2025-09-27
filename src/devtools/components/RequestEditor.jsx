@@ -41,25 +41,75 @@ const RequestEditor = ({ request, onSendRequest, onResponse }) => {
     // 优先使用解析后的body，其次使用原始的requestBody
     const actualBody = body || requestBody
     if (!actualBody) return ''
+    
+    // 过滤掉标记文本
     if (typeof actualBody === 'string') {
-      // 过滤掉不需要的标记
       if (actualBody === '[空请求体]' || actualBody === '[无法解析的请求体]') {
         return ''
       }
-      return actualBody
+      
+      // 尝试解析并格式化JSON
+      try {
+        const parsed = JSON.parse(actualBody)
+        // 默认格式化JSON，每一行显示一个参数，提升可读性
+        return JSON.stringify(parsed, null, 2)
+      } catch {
+        // 如果不是JSON，检查是否是压缩的JSON（去掉空格的JSON）
+        const trimmed = actualBody.trim()
+        if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
+            (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+          try {
+            const parsed = JSON.parse(trimmed)
+            return JSON.stringify(parsed, null, 2)
+          } catch {
+            // 解析失败，返回原始内容
+            return actualBody
+          }
+        }
+        return actualBody
+      }
     }
+    
+    // 如果是对象，格式化为JSON
     return JSON.stringify(actualBody, null, 2)
   }
 
   const detectBodyType = (body, requestBody) => {
     const actualBody = body || requestBody
-    if (!actualBody || actualBody === '[空请求体]' || actualBody === '[无法解析的请求体]') return 'none'
-    try {
-      JSON.parse(actualBody)
-      return 'json'
-    } catch {
-      return 'raw'
+    if (!actualBody || actualBody === '[空请求体]' || actualBody === '[无法解析的请求体]') {
+      return 'none'
     }
+    
+    if (typeof actualBody === 'string') {
+      const trimmed = actualBody.trim()
+      
+      // 优先检查JSON格式（包括压缩的JSON）
+      if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
+          (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+        try {
+          JSON.parse(trimmed)
+          return 'json'
+        } catch {
+          // 解析失败，继续其他检查
+        }
+      }
+      
+      // 检查是否为URL编码格式
+      if (trimmed.includes('=') && trimmed.includes('&')) {
+        return 'form'
+      }
+      
+      // 尝试解析其他可能的JSON格式
+      try {
+        JSON.parse(trimmed)
+        return 'json'
+      } catch {
+        return 'raw'
+      }
+    }
+    
+    // 如果是对象，返回JSON类型
+    return 'json'
   }
 
   const handleHeaderChange = (index, field, value) => {

@@ -163,6 +163,32 @@
   border-bottom: 1px solid #ddd;
 }
 
+.response-section .section-header h4 {
+  margin: 0;
+  font-size: 14px;
+  color: #495057;
+}
+
+.response-section .copy-btn {
+  padding: 4px 8px;
+  border: 1px solid #007bff;
+  background: #ffffff;
+  color: #007bff;
+  cursor: pointer;
+  font-size: 12px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.response-section .copy-btn:hover {
+  background: #007bff;
+  color: #ffffff;
+}
+
+.response-section .copy-btn:active {
+  transform: translateY(1px);
+}
+
 .response-status {
   display: flex;
   align-items: center;

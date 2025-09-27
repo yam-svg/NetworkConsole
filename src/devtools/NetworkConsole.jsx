@@ -4,6 +4,7 @@ import './devtools.css'
 import './split.css'
 import RequestDetails from './components/RequestDetails'
 import RequestEditor from './components/RequestEditor'
+import { copyToClipboardInDevTools } from './utils/clipboard'
 
 function NetworkConsole() {
   const MAX_REQUESTS = 50
@@ -457,7 +458,24 @@ function NetworkConsole() {
                         
                         {/* 响应内容 */}
                         <div className="response-section">
-                          <h4>响应内容</h4>
+                          <div className="section-header">
+                            <h4>响应内容</h4>
+                            <button 
+                              className="copy-btn"
+                              onClick={async () => {
+                                const content = requestResponse.response || '无响应内容'
+                                const success = await copyToClipboardInDevTools(content, '响应内容')
+                                if (success) {
+                                  showNotification('响应内容已复制到剪贴板', 'success')
+                                } else {
+                                  showNotification('请手动复制已选中的内容', 'info')
+                                }
+                              }}
+                              title="复制响应内容"
+                            >
+                              复制
+                            </button>
+                          </div>
                           <div className="response-body">
                             <pre>{requestResponse.response || '无响应内容'}</pre>
                           </div>
