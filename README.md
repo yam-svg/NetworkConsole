@@ -4,6 +4,8 @@
 
 Network Console 是一个为 Chromium / Microsoft Edge 浏览器设计的网络请求调试插件。它在浏览器中提供类似于 DevTools 网络面板的功能，支持捕获、查看、重放和导出网络请求；同时提供独立的 DevTools 面板、弹出窗口（popup）和设置页面。
 
+插件地址: https://microsoftedge.microsoft.com/addons/detail/lgkemdinjnjaphnbkmmcnejbefeapkfd
+
 作者：超大只番薯
 项目主页：https://gitee.com/bigfanshu/NetworkConsole
 
