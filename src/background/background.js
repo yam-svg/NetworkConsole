@@ -1,6 +1,1078 @@
 // 网络控制台 - 后台服务工作器（内存优化版本）
 console.log('🚀 网络控制台 Background Script 已加载')
 
+// 响应拦截管理器
+class ResponseInterceptor {
+  constructor() {
+    this.interceptedRequests = new Map() // 存储被拦截的请求
+    this.activeInterceptions = new Map() // 活跃的拦截配置
+    this.pendingResponses = new Map() // 等待用户修改的响应
+    this.attachedTabs = new Set() // 已附加debugger的标签页
+  }
+
+  // 检查扩展上下文是否有效（遵循扩展上下文失效防护措施）
+  checkExtensionContext() {
+    if (!chrome.runtime?.id) {
+      console.error('❌ [扩展上下文] Extension context invalidated - 扩展上下文已失效')
+      return false
+    }
+    return true
+  }
+
+  // 启用对指定标签页的响应拦截（修复多标签页冲突）
+  async enableInterception(tabId, urlPatterns = []) {
+    try {
+      // 首先检查扩展上下文（遵循扩展上下文失效防护措施）
+      if (!this.checkExtensionContext()) {
+        return { success: false, error: '扩展上下文已失效，请刷新页面重试' }
+      }
+      
+      console.log(`🔍 为标签页 ${tabId} 启用响应拦截，URL模式:`, urlPatterns)
+      
+      // 检查是否已经启用（允许重复启用，但给出警告）
+      if (this.activeInterceptions.has(tabId)) {
+        const existingConfig = this.activeInterceptions.get(tabId)
+        if (existingConfig.enabled) {
+          console.warn(`⚠️ 标签页 ${tabId} 已经启用了响应拦截，将更新配置`)
+          // 更新现有配置而不是报错
+          existingConfig.urlPatterns = urlPatterns
+          existingConfig.timestamp = Date.now()
+          return { success: true, message: '拦截配置已更新' }
+        }
+      }
+      
+      // 安全检查
+      const securityCheck = this.performSecurityCheck(tabId, urlPatterns)
+      if (!securityCheck.safe) {
+        throw new Error(`安全检查失败: ${securityCheck.reason}`)
+      }
+      
+      // 限制同时拦截的标签页数量
+      const enabledCount = Array.from(this.activeInterceptions.values())
+        .filter(config => config.enabled).length
+      if (enabledCount >= 5) {
+        throw new Error('同时最多只能对 5 个标签页启用响应拦截')
+      }
+      
+      // 限制 URL 模式数量
+      if (urlPatterns.length > 10) {
+        throw new Error('URL 模式数量不能超过 10 个')
+      }
+      
+      // 检查标签页是否存在
+      try {
+        const tab = await chrome.tabs.get(tabId)
+        if (!tab) {
+          throw new Error(`标签页 ${tabId} 不存在`)
+        }
+      } catch (error) {
+        throw new Error(`无法访问标签页 ${tabId}: ${error.message}`)
+      }
+      
+      // 附加debugger到目标标签页（如果尚未附加）
+      if (!this.attachedTabs.has(tabId)) {
+        await this.attachDebugger(tabId)
+      } else {
+        console.log(`📌 标签页 ${tabId} 已附加debugger，跳过重复附加`)
+      }
+      
+      // 启用Fetch域用于响应拦截
+      try {
+        await chrome.debugger.sendCommand({ tabId }, 'Fetch.enable', {
+          patterns: [{ requestStage: 'Response' }]
+        })
+        console.log(`✅ 标签页 ${tabId} Fetch拦截已启用`)
+      } catch (error) {
+        console.error(`❌ 启用Fetch拦截失败:`, error)
+        // 如果Fetch启用失败，清理debugger状态
+        this.attachedTabs.delete(tabId)
+        throw new Error(`启用Fetch拦截失败: ${error.message}`)
+      }
+      
+      // 启用运行时域（用于执行JavaScript）
+      try {
+        await chrome.debugger.sendCommand({ tabId }, 'Runtime.enable')
+      } catch (error) {
+        console.warn(`⚠️ 启用Runtime域失败:`, error)
+        // Runtime失败不是致命错误，继续执行
+      }
+      
+      // 保存拦截配置
+      this.activeInterceptions.set(tabId, {
+        urlPatterns: urlPatterns,
+        enabled: true,
+        timestamp: Date.now(),
+        maxInterceptions: 50, // 限制最大拦截数量
+        interceptedCount: 0
+      })
+      
+      console.log(`✅ 标签页 ${tabId} 响应拦截已启用`)
+      return { success: true }
+    } catch (error) {
+      console.error(`❌ 启用响应拦截失败:`, error)
+      // 清理可能的部分状态
+      this.activeInterceptions.delete(tabId)
+      this.clearTabData(tabId)
+      return { success: false, error: error.message }
+    }
+  }
+
+  // 更新拦截模式
+  async updateInterceptionPatterns(tabId, urlPatterns) {
+    try {
+      console.log(`🔄 更新标签页 ${tabId} 的拦截模式:`, urlPatterns)
+      
+      const config = this.activeInterceptions.get(tabId)
+      if (!config || !config.enabled) {
+        throw new Error('该标签页未启用响应拦截')
+      }
+      
+      // 验证 URL 模式
+      const securityCheck = this.performSecurityCheck(tabId, urlPatterns)
+      if (!securityCheck.safe) {
+        throw new Error(`安全检查失败: ${securityCheck.reason}`)
+      }
+      
+      // 更新Fetch拦截模式
+      await chrome.debugger.sendCommand({ tabId }, 'Fetch.enable', {
+        patterns: [{ requestStage: 'Response' }] // 使用项目二的简化方式
+      })
+      
+      // 更新配置
+      config.urlPatterns = urlPatterns
+      config.timestamp = Date.now()
+      
+      console.log(`✅ 标签页 ${tabId} 拦截模式已更新`)
+      return { success: true }
+    } catch (error) {
+      console.error(`❌ 更新拦截模式失败:`, error)
+      return { success: false, error: error.message }
+    }
+  }
+
+  // 禁用响应拦截（增强错误处理）
+  async disableInterception(tabId) {
+    try {
+      console.log(`🔒 为标签页 ${tabId} 禁用响应拦截`)
+      
+      // 检查是否有拦截配置
+      const config = this.activeInterceptions.get(tabId)
+      if (!config) {
+        console.warn(`⚠️ 标签页 ${tabId} 没有活跃的拦截配置`)
+        // 不返回错误，只是清理状态
+        this.clearTabData(tabId)
+        this.attachedTabs.delete(tabId)
+        return { success: true, message: '没有活跃的拦截配置，已清理状态' }
+      }
+      
+      // 检查debugger是否附加
+      const isAttached = this.attachedTabs.has(tabId)
+      console.log(`🔗 标签页 ${tabId} debugger附加状态:`, isAttached)
+      
+      if (isAttached) {
+        // 先禁用Fetch拦截
+        try {
+          await chrome.debugger.sendCommand({ tabId }, 'Fetch.disable')
+          console.log(`✅ 标签页 ${tabId} Fetch拦截已禁用`)
+        } catch (error) {
+          console.warn(`⚠️ 禁用Fetch拦截失败:`, error)
+          // 不抛出错误，继续执行清理
+        }
+        
+        // 分离debugger
+        try {
+          await this.detachDebugger(tabId)
+        } catch (error) {
+          console.warn(`⚠️ 分离debugger失败:`, error)
+          // 即使分离失败，也要清理本地状态
+        }
+      } else {
+        console.log(`📌 标签页 ${tabId} debugger未附加，跳过分离`)
+      }
+      
+      // 清理状态（无论上面是否成功）
+      this.activeInterceptions.delete(tabId)
+      this.clearTabData(tabId)
+      this.attachedTabs.delete(tabId)
+      
+      console.log(`✅ 标签页 ${tabId} 响应拦截已禁用`)
+      return { success: true }
+    } catch (error) {
+      console.error(`❌ 禁用响应拦截失败:`, error)
+      
+      // 即使出错，也要强制清理本地状态
+      this.activeInterceptions.delete(tabId)
+      this.clearTabData(tabId)
+      this.attachedTabs.delete(tabId)
+      
+      return { success: true, warning: `禁用过程中出现错误，但已强制清理状态: ${error.message}` }
+    }
+  }
+
+  // 附加debugger（增强错误处理和重复检查）
+  async attachDebugger(tabId) {
+    // 检查扩展上下文是否有效（遵循扩展上下文失效防护措施）
+    if (!chrome.runtime?.id) {
+      console.error(`❌ [Debugger] 扩展上下文已失效，无法附加debugger到标签页 ${tabId}`)
+      throw new Error('扩展上下文已失效，请刷新页面重试')
+    }
+    
+    if (this.attachedTabs.has(tabId)) {
+      console.log(`⚠️ [Debugger] 标签页 ${tabId} 已附加debugger`)
+      return
+    }
+    
+    try {
+      // 先检查标签页是否存在
+      const tab = await chrome.tabs.get(tabId)
+      if (!tab) {
+        throw new Error(`标签页 ${tabId} 不存在`)
+      }
+      
+      console.log(`🔗 [Debugger] 正在附加debugger到标签页 ${tabId}:`, tab.url)
+      
+      // 检查是否已有其他debugger附加
+      try {
+        const targets = await chrome.debugger.getTargets()
+        const attachedTarget = targets.find(target => 
+          target.tabId === tabId && target.attached
+        )
+        
+        if (attachedTarget) {
+          console.log(`📌 [Debugger] 标签页 ${tabId} 已有debugger附加，重用现有连接`)
+          this.attachedTabs.add(tabId)
+          return
+        }
+      } catch (error) {
+        console.warn(`⚠️ [Debugger] 检查目标失败:`, error)
+        // 继续尝试附加
+      }
+      
+      await chrome.debugger.attach({ tabId }, '1.3')
+      this.attachedTabs.add(tabId)
+      console.log(`✅ [Debugger] 已成功附加debugger到标签页 ${tabId}`)
+    } catch (error) {
+      console.error(`❌ [Debugger] 附加debugger失败:`, {
+        tabId,
+        error: error.message,
+        errorName: error.name,
+        runtimeId: chrome.runtime?.id
+      })
+      
+      // 根据错误类型提供具体的错误信息
+      if (error.message.includes('chrome-extension')) {
+        throw new Error('扩展权限问题：请重新加载扩展后再试')
+      } else if (error.message.includes('Another debugger')) {
+        throw new Error('调试器冲突：请关闭其他调试工具后再试')
+      } else if (error.message.includes('Target closed')) {
+        throw new Error('目标页面已关闭')
+      } else if (error.message.includes('not attached')) {
+        // 特殊处理debugger未附加错误
+        console.warn(`⚠️ [Debugger] debugger未附加错误，尝试清理状态`)
+        this.attachedTabs.delete(tabId)
+        throw new Error('调试器未正确附加，请重试')
+      } else {
+        throw error
+      }
+    }
+  }
+
+  // 分离debugger（增强错误处理）
+  async detachDebugger(tabId) {
+    if (!this.attachedTabs.has(tabId)) {
+      console.log(`📌 [Debugger] 标签页 ${tabId} 未附加debugger，跳过分离`)
+      return
+    }
+    
+    try {
+      // 检查扩展上下文是否有效（遵循扩展上下文失效防护措施）
+      if (!chrome.runtime?.id) {
+        console.warn(`⚠️ [Debugger] 扩展上下文已失效，无法正常分离debugger，但将清理本地状态`)
+        this.attachedTabs.delete(tabId)
+        return
+      }
+      
+      console.log(`🔌 [Debugger] 正在分离标签页 ${tabId} 的debugger`)
+      
+      // 先检查debugger是否仍然附加
+      try {
+        const targets = await chrome.debugger.getTargets()
+        const attachedTarget = targets.find(target => 
+          target.tabId === tabId && target.attached
+        )
+        
+        if (!attachedTarget) {
+          console.log(`📌 [Debugger] 标签页 ${tabId} debugger已经分离，清理本地状态`)
+          this.attachedTabs.delete(tabId)
+          return
+        }
+      } catch (error) {
+        console.warn(`⚠️ [Debugger] 检查目标失败，尝试强制分离:`, error)
+      }
+      
+      await chrome.debugger.detach({ tabId })
+      this.attachedTabs.delete(tabId)
+      console.log(`✅ [Debugger] 已成功分离标签页 ${tabId} 的debugger`)
+    } catch (error) {
+      console.error(`❌ [Debugger] 分离debugger失败:`, {
+        tabId,
+        error: error.message,
+        errorName: error.name,
+        runtimeId: chrome.runtime?.id
+      })
+      
+      // 无论如何都要清理本地状态
+      this.attachedTabs.delete(tabId)
+      
+      // 如果是扩展上下文问题，不抛出错误
+      if (!error.message.includes('chrome-extension') && !error.message.includes('context invalidated')) {
+        console.warn(`⚠️ [Debugger] 分离失败但已清理本地状态`)
+      }
+    }
+  }
+
+  // 处理Fetch被拦截的请求（项目二的方式）
+  async handleFetchRequestPaused(tabId, requestId, request, responseStatusCode, responseHeaders) {
+    try {
+      console.log(`🎯 [FETCH拦截] 开始处理: tabId=${tabId}, requestId=${requestId}`)
+      console.log(`📋 [FETCH拦截] 请求详情:`, {
+        method: request?.method,
+        url: request?.url,
+        responseStatus: responseStatusCode,
+        headersCount: responseHeaders?.length || 0
+      })
+      
+      const config = this.activeInterceptions.get(tabId)
+      if (!config || !config.enabled) {
+        console.log(`⏩ [FETCH拦截] 拦截未启用，继续请求: ${request?.url}`)
+        await chrome.debugger.sendCommand({ tabId }, 'Fetch.continueRequest', {
+          requestId: requestId
+        })
+        return
+      }
+
+      console.log(`🔍 [FETCH拦截] 检查URL匹配: ${request.url}`)
+      
+      // 检查是否匹配目标URL模式
+      const shouldIntercept = this.shouldInterceptRequest(request.url, config.urlPatterns)
+      
+      if (shouldIntercept) {
+        console.log(`📝 [FETCH拦截] URL匹配成功，开始拦截: ${request.url}`)
+        
+        // 获取响应体
+        let body = '', base64 = false
+        try {
+          console.log(`📦 [FETCH拦截] 获取响应体: requestId=${requestId}`)
+          const res = await chrome.debugger.sendCommand({ tabId }, 'Fetch.getResponseBody', { requestId })
+          base64 = res.base64Encoded
+          body = res.body || ''
+          console.log(`✅ [FETCH拦截] 响应体获取成功:`, {
+            base64Encoded: base64,
+            bodyLength: body.length,
+            preview: body.substring(0, 100) + '...'
+          })
+        } catch (e) {
+          console.error(`❌ [FETCH拦截] 获取响应体失败:`, e)
+        }
+        
+        // 正确处理中文编码（修复中文显示问题）
+        let decoded = ''
+        try {
+          if (base64) {
+            // 对于base64编码的内容，需要正确处理UTF-8编码
+            const binaryString = atob(body)
+            const bytes = new Uint8Array(binaryString.length)
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i)
+            }
+            decoded = new TextDecoder('utf-8').decode(bytes)
+          } else {
+            decoded = body
+          }
+          console.log(`🔤 [FETCH拦截] 内容解码成功，长度: ${decoded.length}`)
+        } catch (decodeError) {
+          console.warn(`⚠️ [FETCH拦截] 解码失败，使用原始内容:`, decodeError)
+          decoded = base64 ? atob(body) : body
+        }
+        
+        // 创建拦截数据
+        const interceptData = {
+          requestId,
+          tabId,
+          url: request.url,
+          status: responseStatusCode || 200,
+          headers: (responseHeaders || []).reduce((a, h) => (a[h.name] = h.value, a), {}),
+          body: decoded,
+          timestamp: Date.now()
+        }
+        
+        console.log(`💾 [FETCH拦截] 保存拦截数据:`, {
+          requestId,
+          url: interceptData.url,
+          status: interceptData.status,
+          bodyLength: interceptData.body.length,
+          pendingResponsesCount: this.pendingResponses.size
+        })
+        
+        // 保存到待处理响应
+        this.pendingResponses.set(requestId, interceptData)
+        
+        console.log(`📊 [FETCH拦截] 当前待处理响应列表:`, Array.from(this.pendingResponses.keys()))
+        
+        // 更新拦截统计
+        config.interceptedCount = (config.interceptedCount || 0) + 1
+        
+        // 打开响应编辑窗口
+        console.log(`🪟 [FETCH拦截] 准备打开编辑窗口...`)
+        await this.openResponseEditWindow(interceptData)
+        
+        console.log(`✅ [FETCH拦截] 响应拦截处理完成: ${request.url}`)
+      } else {
+        // 不拦截，直接继续
+        console.log(`⏭️ [FETCH拦截] URL不匹配，继续请求: ${request.url}`)
+        await chrome.debugger.sendCommand({ tabId }, 'Fetch.continueRequest', {
+          requestId: requestId
+        })
+      }
+    } catch (error) {
+      console.error(`❌ [FETCH拦截] 处理失败:`, {
+        error: error.message,
+        stack: error.stack,
+        tabId,
+        requestId,
+        url: request?.url
+      })
+      
+      // 出错时继续请求，避免页面卡死
+      try {
+        console.log(`🔄 [FETCH拦截] 尝试继续请求以避免页面卡死...`)
+        await chrome.debugger.sendCommand({ tabId }, 'Fetch.continueRequest', {
+          requestId: requestId
+        })
+        console.log(`✅ [FETCH拦截] 请求已继续`)
+      } catch (continueError) {
+        console.error(`❌ [FETCH拦截] 继续请求也失败了:`, continueError)
+      }
+    }
+  }
+
+  // 检查是否应该拦截请求
+  shouldInterceptRequest(url, patterns) {
+    if (!patterns || patterns.length === 0) {
+      return false // 没有设置模式，不拦截
+    }
+    
+    console.log(`🔍 检查URL匹配: ${url}`);
+    console.log(`📋 拦截模式:`, patterns);
+    
+    return patterns.some(pattern => {
+      const trimmedPattern = pattern.trim();
+      if (!trimmedPattern) return false;
+      
+      if (trimmedPattern === '*') {
+        console.log(`✅ 通配符匹配: ${url}`);
+        return true;
+      }
+      
+      // 处理不同类型的模式匹配
+      let matched = false;
+      
+      try {
+        // 1. 完全匹配
+        if (url === trimmedPattern) {
+          matched = true;
+        }
+        // 2. 通配符匹配
+        else if (trimmedPattern.includes('*')) {
+          // 正确处理通配符模式
+          let regexPattern = trimmedPattern;
+          
+          // 先转义所有特殊字符（除了*）
+          regexPattern = regexPattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+          
+          // 将 * 替换为 .*
+          regexPattern = regexPattern.replace(/\*/g, '.*');
+          
+          const regex = new RegExp('^' + regexPattern + '$');
+          matched = regex.test(url);
+        }
+        // 3. 包含匹配（如果模式不包含协议）
+        else if (!trimmedPattern.includes('://')) {
+          matched = url.includes(trimmedPattern);
+        }
+        // 4. 前缀匹配
+        else {
+          matched = url.startsWith(trimmedPattern);
+        }
+      } catch (regexError) {
+        console.warn(`⚠️ 正则表达式错误:`, regexError);
+        // 如果正则表达式失败，使用简单的字符串匹配作为回退
+        const cleanPattern = trimmedPattern.replace(/\*/g, '');
+        if (cleanPattern) {
+          matched = url.includes(cleanPattern);
+        } else {
+          // 如果模式只包含通配符，则匹配所有
+          matched = true;
+        }
+      }
+      
+      if (matched) {
+        console.log(`✅ 匹配成功: ${url} 匹配模式 ${trimmedPattern}`);
+      }
+      
+      return matched;
+    })
+  }
+
+  // 打开响应编辑窗口（项目二的方式）
+  async openResponseEditWindow(interceptData) {
+    try {
+      // 检查扩展上下文（遵循扩展上下文失效防护措施）
+      if (!this.checkExtensionContext()) {
+        console.error('❌ [编辑窗口] 扩展上下文已失效，无法打开编辑窗口')
+        // 清理待处理响应
+        if (interceptData && interceptData.requestId) {
+          this.pendingResponses.delete(interceptData.requestId)
+        }
+        return
+      }
+      
+      console.log(`🪟 开始打开响应编辑窗口:`, interceptData.url)
+      
+      // 检查数据有效性
+      if (!interceptData) {
+        throw new Error('无效的拦截数据')
+      }
+      
+      console.log(`📊 拦截数据详情:`, {
+        requestId: interceptData.requestId,
+        tabId: interceptData.tabId,
+        url: interceptData.url,
+        status: interceptData.status,
+        hasHeaders: !!interceptData.headers,
+        bodyLength: interceptData.body?.length || 0
+      })
+      
+      // 检查 chrome.windows API 是否可用
+      if (!chrome.windows) {
+        throw new Error('chrome.windows API 不可用')
+      }
+      
+      // 获取编辑窗口URL
+      const editorUrl = chrome.runtime.getURL('response-editor.html')
+      console.log(`🔗 编辑窗口URL: ${editorUrl}`)
+      
+      // 创建新窗口
+      console.log(`🎆 正在创建编辑窗口...`)
+      
+      try {
+        const window = await chrome.windows.create({
+          url: editorUrl,
+          type: 'popup',
+          width: 900,
+          height: 600,
+          focused: true
+        })
+        
+        if (!window || !window.tabs || !window.tabs[0]) {
+          throw new Error('窗口创建失败或没有有效的标签页')
+        }
+        
+        console.log(`✅ 窗口创建成功:`, {
+          windowId: window.id,
+          tabId: window.tabs[0].id
+        })
+        
+        // 等待窗口加载完成后传递数据
+        const targetTabId = window.tabs[0].id
+        
+        setTimeout(() => {
+          chrome.tabs.sendMessage(targetTabId, {
+            type: 'LOAD_RESPONSE_DATA',
+            data: {
+              requestId: interceptData.requestId,
+              tabId: interceptData.tabId,
+              request: { url: interceptData.url },
+              response: {
+                url: interceptData.url,
+                status: interceptData.status,
+                headers: interceptData.headers,
+                body: { content: interceptData.body }
+              },
+              timestamp: interceptData.timestamp
+            }
+          }).then(response => {
+            console.log(`✅ 数据发送成功:`, response)
+          }).catch(err => {
+            console.warn(`⚠️ 发送响应数据到编辑窗口失败:`, err)
+          })
+        }, 1000)
+        
+      } catch (windowError) {
+        console.error(`❌ 创建弹窗失败，尝试在新标签页中打开:`, windowError)
+        
+        // 备用方案：在新标签页中打开编辑器
+        const tab = await chrome.tabs.create({
+          url: chrome.runtime.getURL('response-editor.html'),
+          active: true
+        })
+        
+        console.log(`✅ 备用标签页创建成功: ${tab.id}`)
+        
+        // 等待标签页加载完成后发送数据
+        setTimeout(() => {
+          chrome.tabs.sendMessage(tab.id, {
+            type: 'LOAD_RESPONSE_DATA',
+            data: {
+              requestId: interceptData.requestId,
+              tabId: interceptData.tabId,
+              request: { url: interceptData.url },
+              response: {
+                url: interceptData.url,
+                status: interceptData.status,
+                headers: interceptData.headers,
+                body: { content: interceptData.body }
+              },
+              timestamp: interceptData.timestamp
+            }
+          }).catch(err => {
+            console.warn(`⚠️ 向备用标签页发送数据失败:`, err)
+          })
+        }, 2000)
+      }
+      
+    } catch (error) {
+      console.error(`❌ 打开响应编辑窗口失败:`, error)
+      
+      // 清理待处理响应
+      if (interceptData && interceptData.requestId) {
+        this.pendingResponses.delete(interceptData.requestId)
+        console.log(`🧹 已清理待处理响应: ${interceptData.requestId}`)
+      }
+    }
+  }
+
+  // 处理用户修改后的响应（项目二的方式）
+  async handleModifiedResponse(requestId, modifiedResponse) {
+    try {
+      console.log(`🔄 [响应修改] 开始处理: requestId=${requestId}`)
+      console.log(`📋 [响应修改] 当前待处理响应列表:`, Array.from(this.pendingResponses.keys()))
+      
+      const interceptData = this.pendingResponses.get(requestId)
+      if (!interceptData) {
+        console.error(`❌ [响应修改] 找不到对应的拦截数据: requestId=${requestId}`)
+        console.error(`❌ [响应修改] 当前存储的所有requestId:`, Array.from(this.pendingResponses.keys()))
+        throw new Error('找不到对应的拦截数据')
+      }
+
+      console.log(`✅ [响应修改] 找到拦截数据:`, {
+        url: interceptData.url,
+        originalStatus: interceptData.status,
+        newStatus: modifiedResponse.status,
+        bodyLength: modifiedResponse.body?.length || 0
+      })
+      
+      // 验证修改后的响应
+      const validationResult = this.validateModifiedResponse(modifiedResponse)
+      if (!validationResult.valid) {
+        console.error(`❌ [响应修改] 验证失败:`, validationResult.reason)
+        throw new Error(`响应验证失败: ${validationResult.reason}`)
+      }
+      
+      const { tabId } = interceptData
+      
+      // 检查拦截配置限制
+      const config = this.activeInterceptions.get(tabId)
+      if (config) {
+        config.interceptedCount = (config.interceptedCount || 0) + 1
+        if (config.interceptedCount > config.maxInterceptions) {
+          console.error(`❌ [响应修改] 超过最大拦截限制: ${config.maxInterceptions}`)
+          throw new Error(`已超过最大拦截数量限制 (${config.maxInterceptions})`)
+        }
+      }
+      
+      // 使用项目二的方式完成请求
+      console.log(`📦 [响应修改] 编码响应内容...`)
+      
+      // 正确处理中文编码（修复中文提交问题）
+      let bodyToEncode = modifiedResponse.body || ''
+      let b64 = ''
+      try {
+        // 先将字符串转为UTF-8字节数组，再转为base64
+        const encoder = new TextEncoder()
+        const bytes = encoder.encode(bodyToEncode)
+        const binaryString = Array.from(bytes, byte => String.fromCharCode(byte)).join('')
+        b64 = btoa(binaryString)
+        console.log(`✅ [响应修改] 内容编码成功，原始长度: ${bodyToEncode.length}, base64长度: ${b64.length}`)
+      } catch (encodeError) {
+        console.warn(`⚠️ [响应修改] UTF-8编码失败，使用简单编码:`, encodeError)
+        b64 = btoa(bodyToEncode)
+      }
+      
+      const headers = [
+        { 
+          name: 'Content-Type', 
+          value: modifiedResponse.headers?.['Content-Type'] || modifiedResponse.headers?.['content-type'] || 'application/json; charset=utf-8' 
+        }
+      ]
+      
+      // 添加其他响应头
+      if (modifiedResponse.headers) {
+        for (const [key, value] of Object.entries(modifiedResponse.headers)) {
+          if (key.toLowerCase() !== 'content-type') {
+            headers.push({ name: key, value: String(value) })
+          }
+        }
+      }
+      
+      console.log(`🚀 [响应修改] 提交修改后的响应:`, {
+        requestId,
+        tabId,
+        responseCode: modifiedResponse.status || interceptData.status || 200,
+        headersCount: headers.length,
+        bodySize: b64.length
+      })
+      
+      await chrome.debugger.sendCommand({ tabId }, 'Fetch.fulfillRequest', {
+        requestId,
+        responseCode: modifiedResponse.status || interceptData.status || 200,
+        responseHeaders: headers,
+        body: b64
+      })
+      
+      // 清理数据
+      this.pendingResponses.delete(requestId)
+      console.log(`🧹 [响应修改] 已清理待处理响应: ${requestId}`)
+      console.log(`📊 [响应修改] 剩余待处理响应数量: ${this.pendingResponses.size}`)
+      
+      console.log(`✅ [响应修改] 修改后的响应已提交`)
+      return { success: true }
+    } catch (error) {
+      console.error(`❌ [响应修改] 处理失败:`, {
+        error: error.message,
+        stack: error.stack,
+        requestId,
+        pendingResponsesCount: this.pendingResponses.size
+      })
+      return { success: false, error: error.message }
+    }
+  }
+
+  // 清理标签页数据
+  clearTabData(tabId) {
+    // 清理该标签页相关的拦截数据
+    for (const [key, value] of this.interceptedRequests.entries()) {
+      if (value.tabId === tabId) {
+        this.interceptedRequests.delete(key)
+      }
+    }
+    
+    for (const [key, value] of this.pendingResponses.entries()) {
+      if (value.tabId === tabId) {
+        this.pendingResponses.delete(key)
+      }
+    }
+  }
+
+  // 安全检查
+  performSecurityCheck(tabId, urlPatterns) {
+    try {
+      // 检查标签页是否存在
+      if (!tabId || typeof tabId !== 'number' || tabId <= 0) {
+        return { safe: false, reason: '无效的标签页 ID' }
+      }
+
+      // 检查 URL 模式
+      if (urlPatterns && Array.isArray(urlPatterns)) {
+        for (const pattern of urlPatterns) {
+          if (typeof pattern !== 'string') {
+            return { safe: false, reason: 'URL 模式必须是字符串' }
+          }
+
+          // 检查有害模式
+          if (pattern.includes('<script') || 
+              pattern.includes('javascript:') || 
+              pattern.includes('data:') ||
+              pattern.includes('vbscript:') ||
+              pattern.includes('file:')) {
+            return { safe: false, reason: `不安全的 URL 模式: ${pattern}` }
+          }
+
+          // 检查模式长度
+          if (pattern.length > 1000) {
+            return { safe: false, reason: 'URL 模式过长' }
+          }
+        }
+      }
+
+      return { safe: true }
+    } catch (error) {
+      return { safe: false, reason: '安全检查异常: ' + error.message }
+    }
+  }
+
+  // 校验修改后的响应
+  validateModifiedResponse(modifiedResponse) {
+    try {
+      // 检查状态码
+      if (modifiedResponse.status && 
+          (typeof modifiedResponse.status !== 'number' ||
+           modifiedResponse.status < 100 || 
+           modifiedResponse.status > 599)) {
+        return { valid: false, reason: '无效的 HTTP 状态码' }
+      }
+
+      // 检查响应体大小
+      if (modifiedResponse.body && 
+          typeof modifiedResponse.body === 'string' &&
+          modifiedResponse.body.length > 10 * 1024 * 1024) { // 10MB
+        return { valid: false, reason: '响应体过大（最大 10MB）' }
+      }
+
+      // 检查响应头
+      if (modifiedResponse.headers && typeof modifiedResponse.headers === 'object') {
+        for (const [key, value] of Object.entries(modifiedResponse.headers)) {
+          if (typeof key !== 'string' || typeof value !== 'string') {
+            return { valid: false, reason: '无效的响应头格式' }
+          }
+
+          // 检查敏感响应头
+          const sensitiveHeaders = ['set-cookie', 'authorization', 'cookie']
+          if (sensitiveHeaders.includes(key.toLowerCase())) {
+            console.warn(`⚠️ 检测到敏感响应头: ${key}`)
+          }
+        }
+      }
+
+      return { valid: true }
+    } catch (error) {
+      return { valid: false, reason: '响应验证异常: ' + error.message }
+    }
+  }
+
+  // 获取拦截状态
+  getInterceptionStatus(tabId) {
+    console.log('🔍 getInterceptionStatus 被调用, tabId:', tabId)
+    
+    const config = this.activeInterceptions.get(tabId)
+    console.log('📊 活跃拦截配置:', config)
+    
+    const isAttached = this.attachedTabs.has(tabId)
+    console.log('🔗 debugger 附加状态:', isAttached)
+    
+    const pendingResponses = Array.from(this.pendingResponses.values())
+      .filter(res => res.tabId === tabId)
+    console.log('📋 待处理响应数量:', pendingResponses.length)
+    
+    const status = {
+      enabled: config?.enabled || false,
+      urlPatterns: config?.urlPatterns || [],
+      attachedDebugger: isAttached,
+      interceptedCount: config?.interceptedCount || 0,
+      pendingCount: pendingResponses.length
+    }
+    
+    console.log('📊 最终状态结果:', status)
+    
+    return status
+  }
+  
+  // 获取所有活跃的拦截状态（用于调试）
+  getAllInterceptionStates() {
+    const states = {}
+    for (const [tabId, config] of this.activeInterceptions.entries()) {
+      states[tabId] = {
+        ...config,
+        attachedDebugger: this.attachedTabs.has(tabId),
+        pendingCount: Array.from(this.pendingResponses.values())
+          .filter(res => res.tabId === tabId).length
+      }
+    }
+    return states
+  }
+  
+  // 检查特定标签页的拦截器健康状态
+  async checkInterceptorHealth(tabId) {
+    const config = this.activeInterceptions.get(tabId)
+    if (!config || !config.enabled) {
+      return { healthy: true, reason: '未启用拦截' }
+    }
+    
+    // 检查debugger是否已附加
+    const isAttached = this.attachedTabs.has(tabId)
+    if (!isAttached) {
+      console.warn(`⚠️ [健康检查] 标签页 ${tabId} 拦截已启用但debugger未附加`)
+      return { healthy: false, reason: 'debugger未附加' }
+    }
+    
+    // 检查标签页是否仍然存在
+    try {
+      const tab = await chrome.tabs.get(tabId)
+      if (!tab) {
+        console.warn(`⚠️ [健康检查] 标签页 ${tabId} 不存在`)
+        return { healthy: false, reason: '标签页不存在' }
+      }
+    } catch (error) {
+      console.warn(`⚠️ [健康检查] 无法获取标签页 ${tabId} 信息:`, error)
+      return { healthy: false, reason: '标签页无法访问' }
+    }
+    
+    return { healthy: true }
+  }
+  
+  // 修复特定标签页的拦截器状态
+  async repairInterceptor(tabId) {
+    console.log(`🔧 [修复] 开始修复标签页 ${tabId} 的拦截器状态`)
+    
+    const config = this.activeInterceptions.get(tabId)
+    if (!config || !config.enabled) {
+      console.log(`⏩ [修复] 标签页 ${tabId} 未启用拦截，无需修复`)
+      return { success: true, action: 'no_action_needed' }
+    }
+    
+    try {
+      // 重新附加debugger
+      console.log(`🔗 [修复] 重新附加debugger到标签页 ${tabId}`)
+      await this.attachDebugger(tabId)
+      
+      // 重新启用Fetch拦截
+      await chrome.debugger.sendCommand({ tabId }, 'Fetch.enable', {
+        patterns: [{ requestStage: 'Response' }]
+      })
+      
+      console.log(`✅ [修复] 标签页 ${tabId} 拦截器修复成功`)
+      return { success: true, action: 'repaired' }
+    } catch (error) {
+      console.error(`❌ [修复] 修复标签页 ${tabId} 拦截器失败:`, error)
+      
+      // 修复失败，清理状态
+      this.activeInterceptions.delete(tabId)
+      this.attachedTabs.delete(tabId)
+      this.clearTabData(tabId)
+      
+      return { success: false, action: 'cleanup', error: error.message }
+    }
+  }
+}
+
+// 创建全局响应拦截器实例
+const responseInterceptor = new ResponseInterceptor()
+
+// 监听debugger事件
+chrome.debugger.onEvent.addListener((source, method, params) => {
+  const tabId = source.tabId
+  
+  console.log(`🔍 [Debugger事件] ${method} (tabId: ${tabId})`)
+  
+  if (method === 'Fetch.requestPaused') {
+    console.log(`🎯 [Debugger事件] 拦截到Fetch请求:`, {
+      method: params.request?.method || '未知',
+      url: params.request?.url || '未知URL',
+      requestId: params.requestId,
+      responseStatusCode: params.responseStatusCode,
+      responseHeadersCount: params.responseHeaders?.length || 0
+    })
+    
+    // 处理Fetch被拦截的请求（项目二的方式）
+    responseInterceptor.handleFetchRequestPaused(
+      tabId, 
+      params.requestId, 
+      params.request, 
+      params.responseStatusCode, 
+      params.responseHeaders
+    )
+  }
+})
+
+// 监听debugger分离事件
+chrome.debugger.onDetach.addListener((source, reason) => {
+  const tabId = source.tabId
+  console.log(`🔌 Debugger从标签页 ${tabId} 分离，原因: ${reason}`)
+  
+  // 清理相关数据
+  responseInterceptor.attachedTabs.delete(tabId)
+  responseInterceptor.activeInterceptions.delete(tabId)
+  responseInterceptor.clearTabData(tabId)
+})
+
+// 监听标签页关闭事件
+chrome.tabs.onRemoved.addListener((tabId) => {
+  console.log(`🗑️ 标签页 ${tabId} 已关闭，清理响应拦截数据`)
+  responseInterceptor.clearTabData(tabId)
+  responseInterceptor.activeInterceptions.delete(tabId)
+  responseInterceptor.attachedTabs.delete(tabId)
+})
+
+// 监听标签页激活事件（修复标签页切换异常）
+chrome.tabs.onActivated.addListener((activeInfo) => {
+  const { tabId, windowId } = activeInfo
+  console.log(`🔄 [标签页切换] 激活标签页 ${tabId} (窗口 ${windowId})`)
+  
+  // 通知DevTools页面标签页已切换
+  chrome.tabs.sendMessage(tabId, {
+    type: 'TAB_ACTIVATED',
+    data: { tabId, windowId }
+  }).catch(() => {
+    // 忽略错误，可能没有DevTools页面或content script
+  })
+  
+  // 检查该标签页的拦截状态
+  const interceptConfig = responseInterceptor.activeInterceptions.get(tabId)
+  if (interceptConfig) {
+    console.log(`📊 [标签页切换] 标签页 ${tabId} 有活跃的拦截配置:`, {
+      enabled: interceptConfig.enabled,
+      urlPatterns: interceptConfig.urlPatterns,
+      interceptedCount: interceptConfig.interceptedCount
+    })
+  }
+})
+
+// 监听标签页更新事件（增强标签页状态管理）
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  console.log(`🔄 [标签页更新] 标签页 ${tabId} 更新:`, changeInfo)
+  
+  // 当标签页完成加载时，检查拦截状态
+  if (changeInfo.status === 'complete' && tab.url) {
+    console.log(`✅ [标签页更新] 标签页 ${tabId} 加载完成:`, tab.url)
+    
+    // 自动清理旧请求
+    autoCleanOldRequests()
+    
+    // 检查是否需要重新附加debugger
+    const interceptConfig = responseInterceptor.activeInterceptions.get(tabId)
+    if (interceptConfig && interceptConfig.enabled) {
+      console.log(`🔗 [标签页更新] 检查debugger附加状态`)
+      
+      // 异步检查并重新附加debugger（如果需要）
+      setTimeout(async () => {
+        try {
+          if (!responseInterceptor.attachedTabs.has(tabId)) {
+            console.log(`🔄 [标签页更新] 重新附加debugger到标签页 ${tabId}`)
+            await responseInterceptor.attachDebugger(tabId)
+            
+            // 重新启用Fetch拦截
+            await chrome.debugger.sendCommand({ tabId }, 'Fetch.enable', {
+              patterns: [{ requestStage: 'Response' }]
+            })
+            
+            console.log(`✅ [标签页更新] 成功重新附加debugger到标签页 ${tabId}`)
+          }
+        } catch (error) {
+          console.error(`❌ [标签页更新] 重新附加debugger失败:`, error)
+          // 如果重新附加失败，清理拦截状态
+          responseInterceptor.activeInterceptions.delete(tabId)
+          responseInterceptor.attachedTabs.delete(tabId)
+        }
+      }, 1000) // 延迟1秒确保页面完全加载
+    }
+  }
+  
+  // 当标签页URL变化时，清理旧的请求数据（可选）
+  if (changeInfo.url) {
+    console.log(`🌐 [标签页更新] 标签页 ${tabId} URL变化: ${changeInfo.url}`)
+  }
+})
+
 // 内存管理配置
 const MEMORY_CONFIG = {
   MAX_REQUESTS_IN_MEMORY: 100,        // 减少内存中最大请求数
@@ -39,11 +1111,11 @@ console.log('📦 可用的chrome API:', Object.keys(chrome))
 
 // 监听来自内容脚本和DevTools的消息
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log('后台收到消息:', message.type, '来自:', sender.tab?.url || sender.url)
+  console.log('📥 [后台消息] 收到消息:', message.type, '来自:', sender.tab?.url || sender.url)
   
   // 检查 runtime 是否仍然有效
   if (chrome.runtime.lastError) {
-    console.error('Runtime错误:', chrome.runtime.lastError)
+    console.error('❌ [后台消息] Runtime错误:', chrome.runtime.lastError)
     return false
   }
 
@@ -76,13 +1148,114 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         })
         return true
 
+      // 响应拦截相关消息
+      case 'ENABLE_RESPONSE_INTERCEPTION':
+        responseInterceptor.enableInterception(message.tabId, message.urlPatterns)
+          .then(result => sendResponse(result))
+          .catch(error => sendResponse({ success: false, error: error.message }))
+        return true
+
+      case 'DISABLE_RESPONSE_INTERCEPTION':
+        responseInterceptor.disableInterception(message.tabId)
+          .then(result => sendResponse(result))
+          .catch(error => sendResponse({ success: false, error: error.message }))
+        return true
+
+      case 'UPDATE_INTERCEPTION_PATTERNS':
+        responseInterceptor.updateInterceptionPatterns(message.tabId, message.urlPatterns)
+          .then(result => sendResponse(result))
+          .catch(error => sendResponse({ success: false, error: error.message }))
+        return true
+
+      case 'GET_INTERCEPTION_STATUS': {
+        console.log('📥 后台收到 GET_INTERCEPTION_STATUS 请求, tabId:', message.tabId)
+        const status = responseInterceptor.getInterceptionStatus(message.tabId)
+        console.log('📋 获取到的拦截状态:', status)
+        const result = { success: true, status }
+        console.log('📤 返回拦截状态响应:', result)
+        sendResponse(result)
+        return true
+      }
+
+      case 'GET_ALL_INTERCEPTION_STATES': {
+        console.log('📥 后台收到 GET_ALL_INTERCEPTION_STATES 请求')
+        const states = responseInterceptor.getAllInterceptionStates()
+        console.log('📋 所有拦截状态:', states)
+        sendResponse({ success: true, states })
+        return true
+      }
+
+      case 'CHECK_INTERCEPTOR_HEALTH': {
+        console.log('📥 后台收到 CHECK_INTERCEPTOR_HEALTH 请求, tabId:', message.tabId)
+        responseInterceptor.checkInterceptorHealth(message.tabId)
+          .then(result => {
+            console.log('📋 健康检查结果:', result)
+            sendResponse({ success: true, health: result })
+          })
+          .catch(error => {
+            console.error('❌ 健康检查失败:', error)
+            sendResponse({ success: false, error: error.message })
+          })
+        return true
+      }
+
+      case 'REPAIR_INTERCEPTOR': {
+        console.log('📥 后台收到 REPAIR_INTERCEPTOR 请求, tabId:', message.tabId)
+        responseInterceptor.repairInterceptor(message.tabId)
+          .then(result => {
+            console.log('📋 修复结果:', result)
+            sendResponse({ success: true, repair: result })
+          })
+          .catch(error => {
+            console.error('❌ 修复失败:', error)
+            sendResponse({ success: false, error: error.message })
+          })
+        return true
+      }
+
+      case 'SUBMIT_MODIFIED_RESPONSE':
+        console.log(`📥 [Background消息] 收到SUBMIT_MODIFIED_RESPONSE请求:`, {
+          requestId: message.requestId,
+          hasModifiedResponse: !!message.modifiedResponse,
+          senderTab: sender.tab?.id
+        })
+        
+        // 确保 sendResponse 是一个函数
+        if (typeof sendResponse !== 'function') {
+          console.error('❌ [Background消息] sendResponse 不是一个函数:', typeof sendResponse)
+          return false
+        }
+        
+        responseInterceptor.handleModifiedResponse(message.requestId, message.modifiedResponse)
+          .then(result => {
+            console.log(`📤 [Background消息] 响应处理结果:`, result)
+            console.log(`📤 [Background消息] 即将调用 sendResponse 传递:`, result)
+            
+            // 确保结果格式正确
+            if (result && typeof result === 'object') {
+              sendResponse(result)
+              console.log(`✅ [Background消息] sendResponse 已调用`)
+            } else {
+              console.error('❌ [Background消息] 结果格式错误:', result)
+              sendResponse({ success: false, error: '结果格式错误', result })
+            }
+          })
+          .catch(error => {
+            console.error(`❌ [Background消息] 响应处理异常:`, error)
+            const errorResponse = { success: false, error: error.message, status: 'error' }
+            console.log(`📤 [Background消息] 返回错误响应:`, errorResponse)
+            sendResponse(errorResponse)
+          })
+        return true
+
       default:
-        sendResponse({ error: '未知消息类型' })
+        console.warn('⚠️ [后台消息] 未知消息类型:', message.type)
+        sendResponse({ success: false, error: '未知消息类型: ' + message.type })
         return false
     }
   } catch (error) {
-    console.error('处理消息时出错:', error)
-    sendResponse({ error: error.message })
+    console.error('❌ [后台消息] 处理消息时出错:', error)
+    sendResponse({ success: false, error: error.message })
     return false
   }
 })
@@ -662,16 +1835,6 @@ function clearStoredRequests(sendResponse) {
   })
 }
 
-// 监听标签页更新
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' && tab.url) {
-    console.log('标签页加载完成:', tab.url)
-    
-    // 可以在这里添加自动清理逻辑
-    autoCleanOldRequests()
-  }
-})
-
 // 自动清理旧请求（存储优化版本）
 function autoCleanOldRequests() {
   chrome.storage.sync.get(['settings'], (result) => {
@@ -707,3 +1870,4 @@ chrome.runtime.onSuspend.addListener(() => {
 })
 
 console.log('🎯 内存优化的 Background Script 初始化完成')
+console.log('🔍 响应拦截器已初始化，准备进行响应拦截')
