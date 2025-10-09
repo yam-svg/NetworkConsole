@@ -8,7 +8,7 @@ if (chrome.devtools && chrome.devtools.panels) {
   try {
     // 创建自定义面板
     chrome.devtools.panels.create(
-      '网络控制台',              // 面板名称
+      'Network Console',        // 面板名称（必须使用英文）
       '',                       // 面板图标（暂时留空）
       'devtools.html',          // 面板页面
       function(panel) {

@@ -31,7 +31,7 @@ function PopupApp() {
 
   const handleOpenDevTools = () => {
     // 指导用户打开DevTools
-    showNotification('请按 F12 打开开发者工具，然后点击"网络控制台"标签页来使用功能', 'info')
+    showNotification('请按 F12 打开开发者工具，然后点击"Network Console"标签页来使用功能', 'info')
   }
 
   return (
