@@ -266,10 +266,17 @@ const ResponseInterceptor = ({ onNotification, initialState, onStateChange, sele
           return
         }
         
+        // 检查是否至少有一个规则
+        if (patterns.length === 0) {
+          setIsLoading(false)
+          showNotification('请至少配置一个拦截规则', 'error')
+          return
+        }
+        
         chrome.runtime.sendMessage({
           type: 'ENABLE_RESPONSE_INTERCEPTION',
           tabId: currentTabId,
-          urlPatterns: patterns.length > 0 ? patterns : ['*']
+          urlPatterns: patterns
         }, (response) => {
           setIsLoading(false)
           console.log('📥 启用拦截响应:', response)
@@ -335,10 +342,17 @@ const ResponseInterceptor = ({ onNotification, initialState, onStateChange, sele
     // 如果拦截已启用，需要重新设置拦截模式
     if (interceptConfig.enabled && currentTabId) {
       const patterns = newPatterns.filter(p => p.trim())
+      
+      // 检查是否至少有一个规则
+      if (patterns.length === 0) {
+        showNotification('请至少配置一个拦截规则', 'error')
+        return
+      }
+      
       chrome.runtime.sendMessage({
         type: 'UPDATE_INTERCEPTION_PATTERNS',
         tabId: currentTabId,
-        urlPatterns: patterns.length > 0 ? patterns : ['*']
+        urlPatterns: patterns
       }, (response) => {
         if (response && response.success) {
           showNotification('拦截规则已更新', 'success')
@@ -350,6 +364,12 @@ const ResponseInterceptor = ({ onNotification, initialState, onStateChange, sele
   }
 
   const addPattern = () => {
+    // 如果拦截已启用，不允许添加规则
+    if (interceptConfig.enabled) {
+      showNotification('拦截启用时无法添加规则，请先禁用拦截', 'error')
+      return
+    }
+    
     const newPatterns = [...interceptConfig.urlPatterns, '']
     setInterceptConfig(prev => ({
       ...prev,
@@ -363,7 +383,24 @@ const ResponseInterceptor = ({ onNotification, initialState, onStateChange, sele
   }
 
   const removePattern = (index) => {
-    if (interceptConfig.urlPatterns.length <= 1) return
+    // 如果拦截已启用，不允许删除规则
+    if (interceptConfig.enabled) {
+      showNotification('拦截启用时无法删除规则，请先禁用拦截', 'error')
+      return
+    }
+    
+    // 不允许删除所有规则，至少保留一个空规则
+    if (interceptConfig.urlPatterns.length <= 1) {
+      // 清空最后一个规则的内容而不是删除它
+      const newPatterns = ['']
+      setInterceptConfig(prev => ({ ...prev, urlPatterns: newPatterns }))
+      
+      // 同步更新到父组件
+      if (onStateChange) {
+        onStateChange(prev => ({ ...prev, urlPatterns: newPatterns }))
+      }
+      return
+    }
     
     const newPatterns = interceptConfig.urlPatterns.filter((_, i) => i !== index)
     setInterceptConfig(prev => ({ ...prev, urlPatterns: newPatterns }))
@@ -543,8 +580,9 @@ const ResponseInterceptor = ({ onNotification, initialState, onStateChange, sele
 
   // URL 模式验证
   const validateUrlPatterns = (patterns) => {
-    if (!patterns || patterns.length === 0) {
-      return { valid: true }
+    // 检查是否至少有一个非空模式
+    if (!patterns || patterns.length === 0 || patterns.every(p => !p.trim())) {
+      return { valid: false, error: '请至少配置一个拦截规则' }
     }
 
     for (const pattern of patterns) {
