@@ -493,7 +493,7 @@ const ResponseInterceptor = ({ onNotification, initialState, onStateChange, sele
                   type="text"
                   value={pattern}
                   onChange={(e) => handlePatternChange(index, e.target.value)}
-                  placeholder="例如：*/api/* 或 https://example.com/*"
+                  placeholder="例如：*/api/* 或 https://example.com/* 或者点击左侧列表选择"
                   className="pattern-input"
                   disabled={interceptConfig.enabled}
                 />
@@ -561,6 +561,8 @@ const ResponseInterceptor = ({ onNotification, initialState, onStateChange, sele
             <div className="warning-box">
               <strong>⚠️ 注意事项：</strong>
               <ul>
+                <li>作者水平差, 只能实现一个标签页内拦截, 如果多开几个页面的控制台, 会导致异常</li>
+                <li>实验性功能, 无法保证所有页面都能正常使用</li>
                 <li>响应拦截需要调试器权限，可能会影响页面性能</li>
                 <li>某些请求类型（如 CORS、Opaque）可能无法被拦截</li>
                 <li>修改响应可能会影响页面功能，请谨慎操作</li>
