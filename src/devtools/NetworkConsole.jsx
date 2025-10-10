@@ -4,6 +4,7 @@ import './devtools.css'
 import './split.css'
 import RequestDetails from './components/RequestDetails'
 import RequestEditor from './components/RequestEditor'
+import ResponseInterceptor from './components/ResponseInterceptor'
 import { copyToClipboardInDevTools } from './utils/clipboard'
 
 function NetworkConsole() {
@@ -15,7 +16,16 @@ function NetworkConsole() {
   const [activeTab, setActiveTab] = useState('details') // 详情标签页状态
   const [requestResponse, setRequestResponse] = useState(null) // 存储请求响应结果
   const [notification, setNotification] = useState(null) // 通知状态
-
+  const [interceptorState, setInterceptorState] = useState({ // 拦截器状态管理
+    enabled: false,
+    urlPatterns: [''],
+    status: {
+      attachedDebugger: false,
+      interceptedCount: 0,
+      pendingCount: 0
+    }
+  })
+  
   // 显示通知函数
   const showNotification = (message, type = 'info') => {
     setNotification({ message, type })
@@ -23,6 +33,170 @@ function NetworkConsole() {
     setTimeout(() => {
       setNotification(null)
     }, 3000)
+  }
+
+  // 加载拦截器状态（增强版）
+  const loadInterceptorStatus = () => {
+    const currentTabId = chrome.devtools?.inspectedWindow?.tabId
+    if (!currentTabId) {
+      console.warn('⚠️ 无法获取当前标签页ID')
+      return
+    }
+
+    console.log('🔄 加载拦截器状态, tabId:', currentTabId)
+
+    try {
+      chrome.runtime.sendMessage({
+        type: 'GET_INTERCEPTION_STATUS',
+        tabId: currentTabId
+      }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('Runtime错误:', chrome.runtime.lastError)
+          return
+        }
+        
+        if (response && response.success) {
+          console.log('✅ 拦截器状态加载成功:', response.status)
+          setInterceptorState(prev => ({
+            ...prev,
+            enabled: response.status.enabled,
+            status: response.status
+          }))
+          
+          // 如果拦截器已启用但debugger未附加，进行健康检查
+          if (response.status.enabled && !response.status.attachedDebugger) {
+            console.warn('⚠️ 检测到拦截器已启用但debugger未附加，进行健康检查')
+            performHealthCheck(currentTabId)
+          }
+        } else {
+          console.warn('⚠️ 加载拦截器状态失败:', response)
+        }
+      })
+    } catch (error) {
+      console.error('加载拦截器状态失败:', error)
+    }
+  }
+  
+  // 进行健康检查（新增）
+  const performHealthCheck = (tabId) => {
+    console.log('🚑 开始健康检查, tabId:', tabId)
+    
+    chrome.runtime.sendMessage({
+      type: 'CHECK_INTERCEPTOR_HEALTH',
+      tabId: tabId
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.error('❌ 健康检查错误:', chrome.runtime.lastError)
+        return
+      }
+      
+      if (response && response.success) {
+        console.log('📋 健康检查结果:', response.health)
+        
+        if (!response.health.healthy) {
+          console.warn('⚠️ 拦截器不健康:', response.health.reason)
+          showNotification(`拦截器状态异常: ${response.health.reason}，正在尝试修复...`, 'warning')
+          
+          // 尝试自动修复
+          attemptRepair(tabId)
+        } else {
+          console.log('✅ 拦截器健康状态正常')
+        }
+      } else {
+        console.error('❌ 健康检查失败:', response)
+      }
+    })
+  }
+  
+  // 尝试修复拦截器（新增）
+  const attemptRepair = (tabId) => {
+    console.log('🔧 尝试修复拦截器, tabId:', tabId)
+    
+    chrome.runtime.sendMessage({
+      type: 'REPAIR_INTERCEPTOR',
+      tabId: tabId
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.error('❌ 修复错误:', chrome.runtime.lastError)
+        showNotification('修复拦截器失败', 'error')
+        return
+      }
+      
+      if (response && response.success) {
+        console.log('📋 修复结果:', response.repair)
+        
+        if (response.repair.success) {
+          if (response.repair.action === 'repaired') {
+            showNotification('拦截器已成功修复', 'success')
+            // 重新加载状态
+            setTimeout(() => {
+              loadInterceptorStatus()
+            }, 1000)
+          } else if (response.repair.action === 'no_action_needed') {
+            console.log('ℹ️ 无需修复')
+          }
+        } else {
+          console.warn('⚠️ 修复失败，已清理状态:', response.repair.error)
+          showNotification('修复失败，已清理拦截状态', 'warning')
+          // 重新加载状态
+          setTimeout(() => {
+            loadInterceptorStatus()
+          }, 1000)
+        }
+      } else {
+        console.error('❌ 修复失败:', response)
+        showNotification('修复拦截器失败', 'error')
+      }
+    })
+  }
+
+  // 处理请求选中，自动填充拦截规则
+  const handleRequestSelect = (request) => {
+    setSelectedRequest(request)
+    
+    // 如果当前在响应拦截标签页，自动填充URL模式
+    if (activeTab === 'interceptor' && request && request.url) {
+      try {
+        const url = new URL(request.url)
+        const pattern = `${url.origin}${url.pathname}*`
+        
+        setInterceptorState(prev => ({
+          ...prev,
+          urlPatterns: [pattern]
+        }))
+        
+      } catch (error) {
+        console.warn('解析URL失败:', error)
+        // 如果解析失败，直接使用原始URL
+        setInterceptorState(prev => ({
+          ...prev,
+          urlPatterns: [request.url]
+        }))
+      }
+    }
+  }
+
+  // 处理标签页切换（增强版）
+  const handleTabChange = (newTab) => {
+    const currentTabId = chrome.devtools?.inspectedWindow?.tabId
+    console.log('🔄 标签页切换到:', newTab, 'currentTabId:', currentTabId)
+    
+    setActiveTab(newTab)
+    
+    // 如果切换到响应拦截标签页，加载状态并进行健康检查
+    if (newTab === 'interceptor') {
+      console.log('🔄 切换到拦截器标签页，加载状态')
+      
+      // 立即加载状态
+      loadInterceptorStatus()
+      
+      // 延迟进行健康检查（给状态加载一些时间）
+      if (currentTabId) {
+        setTimeout(() => {
+          performHealthCheck(currentTabId)
+        }, 1500)
+      }
+    }
   }
 
   useEffect(() => {
@@ -34,6 +208,9 @@ function NetworkConsole() {
     
     // 加载存储的请求数据
     loadStoredRequests()
+    
+    // 加载拦截器状态
+    loadInterceptorStatus()
     
     // 监听来自 background script 的消息
     const handleMessage = (message) => {
@@ -64,6 +241,24 @@ function NetworkConsole() {
             return [message.data, ...prev].slice(0, MAX_REQUESTS)
           }
         })
+        
+        // 如果启用了拦截，更新统计数据
+        if (interceptorState.enabled) {
+          loadInterceptorStatus()
+        }
+      } else if (message.type === 'TAB_ACTIVATED') {
+        // 处理标签页激活事件
+        const { tabId } = message.data
+        console.log('🔄 收到标签页激活消息:', tabId)
+        
+        // 如果是当前标签页被激活，并且当前在拦截器标签页，刷新状态
+        if (tabId === currentTabId && activeTab === 'interceptor') {
+          console.log('🔄 当前标签页被激活，刷新拦截器状态')
+          setTimeout(() => {
+            loadInterceptorStatus()
+            performHealthCheck(currentTabId)
+          }, 500)
+        }
       }
     }
 
@@ -98,16 +293,32 @@ function NetworkConsole() {
     }
     
     chrome.storage.onChanged.addListener(handleStorageChange)
+    
+    // 定期检查拦截器状态（降低频率，用于及时发现问题）
+    let healthCheckInterval
+    if (currentTabId) {
+      healthCheckInterval = setInterval(() => {
+        // 只在拦截器标签页时进行定期检查
+        if (activeTab === 'interceptor') {
+          console.log('⏰ 定期检查拦截器状态')
+          loadInterceptorStatus()
+        }
+      }, 10000) // 10秒检查一次，降低频率
+    }
 
     return () => {
       try {
         chrome.runtime.onMessage.removeListener(messageListener)
         chrome.storage.onChanged.removeListener(handleStorageChange)
+        if (healthCheckInterval) {
+          clearInterval(healthCheckInterval)
+        }
+        console.log('🧩 清理 NetworkConsole 组件')
       } catch (error) {
         console.error('清理监听器时出错:', error)
       }
     }
-  }, [])
+  }, [activeTab]) // 依赖activeTab，当标签页切换时重新运行
 
   // 加载存储的请求数据
   const loadStoredRequests = () => {
@@ -365,7 +576,7 @@ function NetworkConsole() {
                 <div
                   key={request.id}
                   className={`request-item ${selectedRequest?.id === request.id ? 'selected' : ''}`}
-                  onClick={() => setSelectedRequest(request)}
+                  onClick={() => handleRequestSelect(request)}
                 >
                   <div className={`request-method ${request.method}`}>
                     {request.method}
@@ -398,19 +609,25 @@ function NetworkConsole() {
               <div className="details-tabs">
                 <button 
                   className={`tab-button ${activeTab === 'details' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('details')}
+                  onClick={() => handleTabChange('details')}
                 >
                   请求详情
                 </button>
                 <button 
                   className={`tab-button ${activeTab === 'editor' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('editor')}
+                  onClick={() => handleTabChange('editor')}
                 >
                   请求编辑
                 </button>
                 <button 
+                  className={`tab-button ${activeTab === 'interceptor' ? 'active' : ''}`}
+                  onClick={() => handleTabChange('interceptor')}
+                >
+                  响应拦截
+                </button>
+                <button 
                   className={`tab-button ${activeTab === 'response' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('response')}
+                  onClick={() => handleTabChange('response')}
                   disabled={!requestResponse}
                 >
                   响应结果
@@ -438,6 +655,14 @@ function NetworkConsole() {
                       setRequestResponse(response)
                       setActiveTab('response') // 自动切换到响应标签页
                     }}
+                  />
+                )}
+                {activeTab === 'interceptor' && (
+                  <ResponseInterceptor 
+                    onNotification={showNotification}
+                    initialState={interceptorState}
+                    onStateChange={setInterceptorState}
+                    selectedRequest={selectedRequest}
                   />
                 )}
                 {activeTab === 'response' && (

@@ -18,8 +18,10 @@ export default defineConfig({
         options: resolve(__dirname, 'options.html'),
         devtools: resolve(__dirname, 'devtools.html'),
         'devtools-entry': resolve(__dirname, 'devtools-entry.html'),
+        'response-editor': resolve(__dirname, 'response-editor.html'),
         background: resolve(__dirname, 'src/background/background.js'),
-        content: resolve(__dirname, 'src/content/content.js')
+        content: resolve(__dirname, 'src/content/content.js'),
+        'response-editor-script': resolve(__dirname, 'src/response-editor.js')
       },
       output: {
         entryFileNames: 'assets/[name].js',
