@@ -29,6 +29,19 @@ const ResponseInterceptor = ({ onNotification, initialState, onStateChange, sele
       setInterceptStatus(initialState.status)
     }
   }, [initialState])
+  
+  // 重启拦截时同步预设响应体
+  useEffect(() => {
+    if (interceptConfig.enabled && currentTabId) {
+      interceptConfig.urlPatterns.map((pattern) => {
+        const presetForPattern = interceptConfig.presetResponses.find(preset => preset.urlPattern === pattern);
+        
+        if (presetForPattern?.responseBody) {
+          handlePresetResponseChange(pattern, { responseBody: presetForPattern?.responseBody });
+        }
+      })
+    }
+  }, [interceptConfig.enabled])
 
   // 当选中请求时自动填充URL模式
   useEffect(() => {
@@ -752,6 +765,7 @@ const ResponseInterceptor = ({ onNotification, initialState, onStateChange, sele
                 {/* 查找该模式对应的预设响应体 */}
                 {(() => {
                   const presetForPattern = interceptConfig.presetResponses.find(preset => preset.urlPattern === pattern);
+                  
                   return (
                     <>
                       <div className="form-group">
@@ -776,7 +790,11 @@ const ResponseInterceptor = ({ onNotification, initialState, onStateChange, sele
                           style={{ minHeight: '120px' }}
                           value={presetForPattern?.responseBody || ''}
                           onChange={(e) => {
-                            handlePresetResponseChange(pattern, { responseBody: e.target.value });
+                            if (e.target.value.length === 0) {
+                              removePresetResponseForPattern(pattern)
+                            } else {
+                              handlePresetResponseChange(pattern, { responseBody: e.target.value });
+                            }
                           }}
                         />
                       </div>
