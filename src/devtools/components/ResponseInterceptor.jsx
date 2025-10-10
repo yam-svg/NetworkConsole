@@ -38,18 +38,60 @@ const ResponseInterceptor = ({ onNotification, initialState, onStateChange, sele
         const url = new URL(selectedRequest.url)
         const pattern = `${url.origin}${url.pathname}*`
         
-        setInterceptConfig(prev => ({
-          ...prev,
-          urlPatterns: [pattern]
-        }))
+        // 新的自动填充逻辑：
+        // 1. 如果只有一个规则（无论是否为空），则替换它
+        // 2. 如果有多个规则，填充第一个空白的输入框
+        // 3. 如果所有输入框都已填满，则不进行任何操作
+        const patterns = interceptConfig.urlPatterns;
+        
+        if (patterns.length === 1) {
+          // 只有一个规则时，无论是否为空都替换它
+          setInterceptConfig(prev => ({
+            ...prev,
+            urlPatterns: [pattern]
+          }));
+        } else {
+          // 查找第一个空白的URL模式输入框
+          const emptyIndex = patterns.findIndex(p => !p.trim());
+          
+          if (emptyIndex >= 0) {
+            // 填充第一个空白输入框
+            setInterceptConfig(prev => ({
+              ...prev,
+              urlPatterns: prev.urlPatterns.map((p, i) => i === emptyIndex ? pattern : p)
+            }));
+          } else if (patterns.length === 0 || patterns.every(p => p.trim() !== '')) {
+            // 如果所有输入框都已填满，则不进行任何操作
+            console.log('所有URL模式输入框都已填满，不自动填充');
+          }
+        }
         
       } catch (error) {
         console.warn('解析URL失败:', error)
-        setInterceptConfig(prev => ({
-          ...prev,
-          urlPatterns: [selectedRequest.url]
-        }))
+        // 如果解析失败，直接使用原始URL
+        const patterns = interceptConfig.urlPatterns;
         
+        if (patterns.length === 1) {
+          // 只有一个规则时，无论是否为空都替换它
+          setInterceptConfig(prev => ({
+            ...prev,
+            urlPatterns: [selectedRequest.url]
+          }));
+        } else {
+          // 查找第一个空白的URL模式输入框
+          const emptyIndex = patterns.findIndex(p => !p.trim());
+          
+          if (emptyIndex >= 0) {
+            // 填充第一个空白输入框
+            setInterceptConfig(prev => ({
+              ...prev,
+              urlPatterns: prev.urlPatterns.map((p, i) => i === emptyIndex ? selectedRequest.url : p)
+            }));
+          } else if (patterns.length === 0 || patterns.every(p => p.trim() !== '')) {
+            // 如果所有输入框都已填满，则不进行任何操作
+            console.log('所有URL模式输入框都已填满，不自动填充');
+          }
+        }
       }
     }
   }, [selectedRequest, interceptConfig.enabled])
@@ -451,15 +493,45 @@ const ResponseInterceptor = ({ onNotification, initialState, onStateChange, sele
 
   // 应用预设模式
   const applyPresetPattern = (pattern) => {
-    const newPatterns = [pattern]
-    setInterceptConfig(prev => ({
-      ...prev,
-      urlPatterns: newPatterns
-    }))
+    // 新的自动填充逻辑：
+    // 1. 如果只有一个规则（无论是否为空），则替换它
+    // 2. 如果有多个规则，填充第一个空白的输入框
+    // 3. 如果所有输入框都已填满，则不进行任何操作
+    const patterns = interceptConfig.urlPatterns;
     
-    // 同步更新到父组件
-    if (onStateChange) {
-      onStateChange(prev => ({ ...prev, urlPatterns: newPatterns }))
+    if (patterns.length === 1) {
+      // 只有一个规则时，无论是否为空都替换它
+      const newPatterns = [pattern];
+      setInterceptConfig(prev => ({
+        ...prev,
+        urlPatterns: newPatterns
+      }));
+      
+      // 同步更新到父组件
+      if (onStateChange) {
+        onStateChange(prev => ({ ...prev, urlPatterns: newPatterns }));
+      }
+    } else {
+      // 查找第一个空白的URL模式输入框
+      const emptyIndex = patterns.findIndex(p => !p.trim());
+      
+      if (emptyIndex >= 0) {
+        // 填充第一个空白输入框
+        const newPatterns = [...interceptConfig.urlPatterns];
+        newPatterns[emptyIndex] = pattern;
+        setInterceptConfig(prev => ({
+          ...prev,
+          urlPatterns: newPatterns
+        }));
+        
+        // 同步更新到父组件
+        if (onStateChange) {
+          onStateChange(prev => ({ ...prev, urlPatterns: newPatterns }));
+        }
+      } else if (patterns.length === 0 || patterns.every(p => p.trim() !== '')) {
+        // 如果所有输入框都已填满，则不进行任何操作
+        console.log('所有URL模式输入框都已填满，不自动填充');
+      }
     }
   }
 

@@ -160,18 +160,60 @@ function NetworkConsole() {
         const url = new URL(request.url)
         const pattern = `${url.origin}${url.pathname}*`
         
-        setInterceptorState(prev => ({
-          ...prev,
-          urlPatterns: [pattern]
-        }))
+        // 新的自动填充逻辑：
+        // 1. 如果只有一个规则（无论是否为空），则替换它
+        // 2. 如果有多个规则，填充第一个空白的输入框
+        // 3. 如果所有输入框都已填满，则不进行任何操作
+        const patterns = interceptorState.urlPatterns;
+        
+        if (patterns.length === 1) {
+          // 只有一个规则时，无论是否为空都替换它
+          setInterceptorState(prev => ({
+            ...prev,
+            urlPatterns: [pattern]
+          }));
+        } else {
+          // 查找第一个空白的URL模式输入框
+          const emptyIndex = patterns.findIndex(p => !p.trim());
+          
+          if (emptyIndex >= 0) {
+            // 填充第一个空白输入框
+            setInterceptorState(prev => ({
+              ...prev,
+              urlPatterns: prev.urlPatterns.map((p, i) => i === emptyIndex ? pattern : p)
+            }));
+          } else if (patterns.length === 0 || patterns.every(p => p.trim() !== '')) {
+            // 如果所有输入框都已填满，则不进行任何操作
+            console.log('所有URL模式输入框都已填满，不自动填充');
+          }
+        }
         
       } catch (error) {
         console.warn('解析URL失败:', error)
         // 如果解析失败，直接使用原始URL
-        setInterceptorState(prev => ({
-          ...prev,
-          urlPatterns: [request.url]
-        }))
+        const patterns = interceptorState.urlPatterns;
+        
+        if (patterns.length === 1) {
+          // 只有一个规则时，无论是否为空都替换它
+          setInterceptorState(prev => ({
+            ...prev,
+            urlPatterns: [request.url]
+          }));
+        } else {
+          // 查找第一个空白的URL模式输入框
+          const emptyIndex = patterns.findIndex(p => !p.trim());
+          
+          if (emptyIndex >= 0) {
+            // 填充第一个空白输入框
+            setInterceptorState(prev => ({
+              ...prev,
+              urlPatterns: prev.urlPatterns.map((p, i) => i === emptyIndex ? request.url : p)
+            }));
+          } else if (patterns.length === 0 || patterns.every(p => p.trim() !== '')) {
+            // 如果所有输入框都已填满，则不进行任何操作
+            console.log('所有URL模式输入框都已填满，不自动填充');
+          }
+        }
       }
     }
   }
