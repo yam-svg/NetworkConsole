@@ -553,9 +553,10 @@ const ResponseInterceptor = ({ onNotification, initialState, onStateChange, sele
             <ol>
               <li>配置要拦截的 URL 模式，使用 * 作为通配符</li>
               <li>点击&ldquo;启用拦截&rdquo;开始拦截响应</li>
-              <li>当匹配的请求完成时，会自动弹出编辑窗口</li>
-              <li>在编辑窗口中修改响应内容，点击&ldquo;应用修改&rdquo;</li>
+              <li>当匹配的请求完成时，会自动弹出编辑窗口, 注意, 如果匹配到多个请求, 会多开窗口</li>
+              <li>在编辑窗口中等待响应体到达之后, 修改响应内容，点击&ldquo;应用修改&rdquo;</li>
               <li>修改后的响应会被注入到页面中</li>
+              <li>如果不想修改, 请关闭窗口或者点击取消拦截, 原始响应会发送到页面上</li>
             </ol>
             
             <div className="warning-box">
