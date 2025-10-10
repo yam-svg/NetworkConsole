@@ -26,6 +26,32 @@ function NetworkConsole() {
     }
   })
   
+  // 添加窗口关闭事件监听器
+  useEffect(() => {
+    const handleBeforeUnload = async () => {
+      // 如果拦截器已启用，发送消息到background script禁用拦截
+      if (interceptorState.enabled) {
+        const currentTabId = chrome.devtools?.inspectedWindow?.tabId
+        if (currentTabId) {
+          try {
+            await chrome.runtime.sendMessage({
+              type: 'DEVTOOLS_CLOSED',
+              tabId: currentTabId
+            })
+          } catch (error) {
+            console.error('关闭DevTools时禁用拦截失败:', error)
+          }
+        }
+      }
+    }
+    
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, [interceptorState.enabled])
+  
   // 显示通知函数
   const showNotification = (message, type = 'info') => {
     setNotification({ message, type })

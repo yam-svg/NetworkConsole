@@ -1073,6 +1073,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           })
         return true
 
+      case 'DEVTOOLS_CLOSED':
+        // 处理DevTools关闭事件
+        console.log('📥 [Background消息] 收到DEVTOOLS_CLOSED消息, tabId:', message.tabId)
+        if (message.tabId) {
+          // 禁用该标签页的响应拦截
+          responseInterceptor.disableInterception(message.tabId)
+            .then(result => {
+              console.log('✅ DevTools关闭时已禁用响应拦截:', result)
+            })
+            .catch(error => {
+              console.error('❌ DevTools关闭时禁用响应拦截失败:', error)
+            })
+        }
+        sendResponse({ success: true })
+        return true
+
       default:
         console.warn('⚠️ [后台消息] 未知消息类型:', message.type)
         sendResponse({ success: false, error: '未知消息类型: ' + message.type })
