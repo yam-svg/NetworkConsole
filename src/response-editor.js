@@ -8,50 +8,50 @@ class ResponseEditor {
     this.isModified = false
     this.init()
   }
-
+  
   init() {
     this.initUI()
     this.bindEvents()
     this.loadResponseData()
   }
-
+  
   initUI() {
     // 初始化标签页切换
     const tabButtons = document.querySelectorAll('.tab-button')
     const tabPanels = document.querySelectorAll('.tab-panel')
-
+    
     tabButtons.forEach(button => {
       button.addEventListener('click', () => {
         const targetTab = button.dataset.tab
-
+        
         // 更新按钮状态
         tabButtons.forEach(btn => btn.classList.remove('active'))
         button.classList.add('active')
-
+        
         // 更新面板状态
         tabPanels.forEach(panel => panel.classList.remove('active'))
-        document.getElementById(`tab-${targetTab}`)?.classList.add('active')
+        document.getElementById(`tab-${ targetTab }`)?.classList.add('active')
       })
     })
   }
-
+  
   bindEvents() {
     // 绑定按钮事件
     document.getElementById('btn-apply').addEventListener('click', () => this.applyModifications())
     document.getElementById('btn-reset').addEventListener('click', () => this.resetToOriginal())
     document.getElementById('btn-cancel').addEventListener('click', () => this.cancelInterception())
-
+    
     // 监听内容变化
     document.getElementById('response-body').addEventListener('input', () => {
       this.isModified = true
       this.updateUI()
     })
-
+    
     document.getElementById('response-status').addEventListener('input', () => {
       this.isModified = true
       this.updateUI()
     })
-
+    
     // 监听来自 background script 的消息
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (message.type === 'LOAD_RESPONSE_DATA') {
@@ -60,17 +60,73 @@ class ResponseEditor {
         sendResponse({ success: true })
       }
     })
-
+    
     // 监听窗口关闭
     window.addEventListener('beforeunload', (e) => {
-      if (this.isModified) {
-        e.preventDefault()
-        e.returnValue = '您有未保存的修改，确定要关闭吗？'
-        return e.returnValue
+      // 如果有未处理的拦截请求，发送原始响应放行
+      if (this.interceptData && this.originalResponse) {
+        const originalResponseData = {
+          status: this.originalResponse.status || 200,
+          body: this.originalResponse.body?.content || '',
+          headers: this.originalResponse.headers,
+          originalBody: this.originalResponse.body,
+        }
+        
+        console.log('🚪 窗口关闭，发送原始响应放行请求')
+        
+        // 使用 sendBeacon 或 同步请求确保消息能够发送
+        chrome.runtime.sendMessage({
+          type: 'SUBMIT_MODIFIED_RESPONSE',
+          requestId: this.interceptData.requestId,
+          modifiedResponse: originalResponseData,
+        })
       }
+      
+      // if (this.isModified) {
+      //   e.preventDefault()
+      //   e.returnValue = '您有未保存的修改，确定要关闭吗？'
+      //   return e.returnValue
+      // }
+    })
+    
+    // 监听页面卸载，确保放行被拦截的请求
+    window.addEventListener('unload', () => {
+      this.releaseInterceptedRequest()
+    })
+    
+    // 监听页面隐藏，在窗口被关闭时也会触发
+    window.addEventListener('pagehide', () => {
+      this.releaseInterceptedRequest()
     })
   }
-
+  
+  releaseInterceptedRequest() {
+    // 避免重复放行
+    if (!this.interceptData || this.interceptData._released) {
+      return
+    }
+    
+    console.log('🔓 自动放行被拦截的请求')
+    
+    if (this.originalResponse) {
+      const originalResponseData = {
+        status: this.originalResponse.status || 200,
+        body: this.originalResponse.body?.content || '',
+        headers: this.originalResponse.headers,
+        originalBody: this.originalResponse.body,
+      }
+      
+      // 标记为已放行，避免重复处理
+      this.interceptData._released = true
+      
+      chrome.runtime.sendMessage({
+        type: 'SUBMIT_MODIFIED_RESPONSE',
+        requestId: this.interceptData.requestId,
+        modifiedResponse: originalResponseData,
+      })
+    }
+  }
+  
   async loadResponseData() {
     // 等待从 background script 接收数据
     console.log('⏳ 等待响应数据...')
@@ -82,7 +138,7 @@ class ResponseEditor {
       }
     }, 5000)
   }
-
+  
   loadInterceptData(data) {
     try {
       this.interceptData = data
@@ -102,23 +158,23 @@ class ResponseEditor {
       this.showError('加载响应数据失败: ' + error.message)
     }
   }
-
+  
   updateBasicInfo() {
     if (!this.interceptData) return
-
+    
     const { request, response } = this.interceptData
     
     // 更新标题
     document.getElementById('response-url').textContent = response.url || request.url || '未知 URL'
     
     // 更新请求信息
-    const requestInfo = `${request.method || 'GET'} ${request.url || ''}`
+    const requestInfo = `${ request.method || 'GET' } ${ request.url || '' }`
     document.getElementById('request-info').textContent = requestInfo
   }
-
+  
   updateResponseContent() {
     if (!this.interceptData) return
-
+    
     const { response } = this.interceptData
     
     // 设置状态码
@@ -145,13 +201,13 @@ class ResponseEditor {
       
       // 显示编码信息
       if (bodyData.encoding && bodyData.encoding !== 'identity') {
-        console.log(`🗜️ 检测到响应编码: ${bodyData.encoding}`)
+        console.log(`🗜️ 检测到响应编码: ${ bodyData.encoding }`)
       }
       
       // 显示错误信息
       if (bodyData.error) {
-        console.warn(`⚠️ 处理响应内容时出错: ${bodyData.error}`)
-        this.showError(`处理响应内容失败: ${bodyData.error}`)
+        console.warn(`⚠️ 处理响应内容时出错: ${ bodyData.error }`)
+        this.showError(`处理响应内容失败: ${ bodyData.error }`)
       }
     }
     
@@ -172,7 +228,7 @@ class ResponseEditor {
     // 更新内容类型
     this.updateContentType()
   }
-
+  
   formatResponseBody(body) {
     if (!body) return ''
     
@@ -185,10 +241,10 @@ class ResponseEditor {
       return body
     }
   }
-
+  
   updateResponseHeaders() {
     if (!this.interceptData) return
-
+    
     const { response } = this.interceptData
     const headersList = document.getElementById('headers-list')
     
@@ -204,8 +260,8 @@ class ResponseEditor {
       response.headers.forEach(header => {
         headersHtml += `
           <div class="header-item">
-            <span class="header-name">${this.escapeHtml(header.name)}:</span>
-            <span class="header-value">${this.escapeHtml(header.value)}</span>
+            <span class="header-name">${ this.escapeHtml(header.name) }:</span>
+            <span class="header-value">${ this.escapeHtml(header.value) }</span>
           </div>
         `
       })
@@ -214,8 +270,8 @@ class ResponseEditor {
       Object.entries(response.headers).forEach(([name, value]) => {
         headersHtml += `
           <div class="header-item">
-            <span class="header-name">${this.escapeHtml(name)}:</span>
-            <span class="header-value">${this.escapeHtml(value)}</span>
+            <span class="header-name">${ this.escapeHtml(name) }:</span>
+            <span class="header-value">${ this.escapeHtml(value) }</span>
           </div>
         `
       })
@@ -223,38 +279,38 @@ class ResponseEditor {
     
     headersList.innerHTML = headersHtml
   }
-
+  
   updateSettings() {
     // 更新设置面板的信息
     this.updateResponseSize()
     this.updateContentType()
   }
-
+  
   updateResponseSize(content = null) {
     const body = content || document.getElementById('response-body').value
     const sizeBytes = new Blob([body]).size
     const sizeKB = (sizeBytes / 1024).toFixed(2)
     const sizeMB = (sizeBytes / (1024 * 1024)).toFixed(2)
     
-    let sizeText = `${sizeBytes} 字节`
+    let sizeText = `${ sizeBytes } 字节`
     if (sizeBytes > 1024) {
-      sizeText += ` (${sizeKB} KB)`
+      sizeText += ` (${ sizeKB } KB)`
     }
     if (sizeBytes > 1024 * 1024) {
-      sizeText += ` (${sizeMB} MB)`
+      sizeText += ` (${ sizeMB } MB)`
     }
     
     document.getElementById('response-size').textContent = sizeText
   }
-
+  
   updateContentType() {
     if (!this.interceptData) return
-
+    
     const { response } = this.interceptData
     const contentType = this.getHeaderValue(response.headers, 'content-type') || '未知'
     document.getElementById('content-type').textContent = contentType
   }
-
+  
   getHeaderValue(headers, name) {
     if (!headers) return null
     
@@ -274,13 +330,13 @@ class ResponseEditor {
     
     return null
   }
-
+  
   async applyModifications() {
     if (!this.interceptData) {
       this.showError('没有可修改的响应数据')
       return
     }
-
+    
     try {
       this.showLoading(true)
       
@@ -289,7 +345,7 @@ class ResponseEditor {
         status: parseInt(document.getElementById('response-status').value) || 200,
         body: document.getElementById('response-body').value,
         headers: this.originalResponse.headers, // 保持原有响应头
-        originalBody: this.originalResponse.body // 保留原始响应体信息
+        originalBody: this.originalResponse.body, // 保留原始响应体信息
       }
       
       console.log('📤 提交修改后的响应:', modifiedResponse)
@@ -298,7 +354,7 @@ class ResponseEditor {
       chrome.runtime.sendMessage({
         type: 'SUBMIT_MODIFIED_RESPONSE',
         requestId: this.interceptData.requestId,
-        modifiedResponse: modifiedResponse
+        modifiedResponse: modifiedResponse,
       }, (response) => {
         this.showLoading(false)
         
@@ -306,22 +362,21 @@ class ResponseEditor {
           this.showSuccess('响应修改已应用到页面')
           this.isModified = false
           
-          // 3 秒后自动关闭窗口
-          setTimeout(() => {
-            window.close()
-          }, 3000)
+          // 标记为已处理，避免重复放行
+          this.interceptData._released = true
+          
+          window.close()
         } else {
-          // this.showError('应用修改失败: ' + (response?.error || '未知错误'))
+          window.close()
         }
       })
       
     } catch (error) {
       this.showLoading(false)
-      console.error('❌ 应用修改失败:', error)
-      this.showError('应用修改失败: ' + error.message)
+      window.close()
     }
   }
-
+  
   resetToOriginal() {
     if (!this.originalResponse) return
     
@@ -335,7 +390,7 @@ class ResponseEditor {
     this.updateUI()
     this.showSuccess('已重置到原始内容')
   }
-
+  
   cancelInterception() {
     if (this.isModified) {
       if (!confirm('您有未保存的修改，确定要取消拦截吗？')) {
@@ -344,14 +399,36 @@ class ResponseEditor {
     }
     
     console.log('❌ 取消响应拦截')
+    
+    // 发送取消拦截消息到后台，使用原始响应内容放行请求
+    if (this.interceptData && this.originalResponse) {
+      const originalResponseData = {
+        status: this.originalResponse.status || 200,
+        body: this.originalResponse.body?.content || '',
+        headers: this.originalResponse.headers,
+        originalBody: this.originalResponse.body,
+      }
+      
+      console.log('📤 发送原始响应数据放行请求:', originalResponseData)
+      
+      // 标记为已处理，避免重复放行
+      this.interceptData._released = true
+      
+      chrome.runtime.sendMessage({
+        type: 'SUBMIT_MODIFIED_RESPONSE',
+        requestId: this.interceptData.requestId,
+        modifiedResponse: originalResponseData,
+      }, (response) => {
+        console.log('✅ 取消拦截响应:', response)
+      })
+    }
+    
     this.showSuccess('已取消拦截，响应将使用原始内容')
     
-    // 2 秒后关闭窗口
-    setTimeout(() => {
-      window.close()
-    }, 2000)
+    // 立即关闭窗口
+    window.close()
   }
-
+  
   updateUI() {
     // 更新 UI 状态
     const applyBtn = document.getElementById('btn-apply')
@@ -368,7 +445,7 @@ class ResponseEditor {
     // 更新响应大小
     this.updateResponseSize()
   }
-
+  
   showLoading(show) {
     const loading = document.getElementById('loading')
     if (show) {
@@ -377,15 +454,15 @@ class ResponseEditor {
       loading.classList.remove('show')
     }
   }
-
+  
   showError(message) {
     this.showMessage(message, 'error')
   }
-
+  
   showSuccess(message) {
     this.showMessage(message, 'success')
   }
-
+  
   showMessage(message, type) {
     // 移除现有消息
     const existingMessages = document.querySelectorAll('.error-message, .success-message')
@@ -405,7 +482,7 @@ class ResponseEditor {
       messageDiv.remove()
     }, 5000)
   }
-
+  
   escapeHtml(text) {
     const div = document.createElement('div')
     div.textContent = text

@@ -354,8 +354,6 @@ const ResponseInterceptor = ({ onNotification, initialState, onStateChange, sele
     if (onStateChange) {
       onStateChange(prev => ({ ...prev, urlPatterns: newPatterns }))
     }
-    
-    showNotification(`已应用预设模式: ${pattern}`, 'success')
   }
 
   const showNotification = (message, type) => {
