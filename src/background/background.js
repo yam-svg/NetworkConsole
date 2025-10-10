@@ -65,6 +65,7 @@ class ResponseInterceptor {
       // 保存拦截配置
       this.activeInterceptions.set(tabId, {
         urlPatterns: urlPatterns,
+        presetResponses: [], // 默认空的预设响应体列表
         enabled: true,
         timestamp: Date.now(),
         maxInterceptions: 50, // 限制最大拦截数量
@@ -109,6 +110,83 @@ class ResponseInterceptor {
     } catch (error) {
       console.error(`❌ 更新拦截模式失败:`, error)
       return { success: false, error: error.message }
+    }
+  }
+
+  // 更新预设响应体
+  async updatePresetResponses(tabId, presetResponses) {
+    try {
+      console.log(`🔄 更新标签页 ${tabId} 的预设响应体:`, presetResponses)
+      
+      const config = this.activeInterceptions.get(tabId)
+      if (!config || !config.enabled) {
+        throw new Error('该标签页未启用响应拦截')
+      }
+      
+      // 验证预设响应体
+      const validation = this.validatePresetResponses(presetResponses);
+      if (!validation.valid) {
+        throw new Error(`预设响应体验证失败: ${validation.reason}`);
+      }
+      
+      // 更新配置
+      config.presetResponses = presetResponses;
+      config.timestamp = Date.now();
+      
+      console.log(`✅ 标签页 ${tabId} 预设响应体已更新`);
+      return { success: true };
+    } catch (error) {
+      console.error(`❌ 更新预设响应体失败:`, error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // 验证预设响应体
+  validatePresetResponses(presetResponses) {
+    try {
+      if (!presetResponses || !Array.isArray(presetResponses)) {
+        return { valid: true }; // 允许空数组
+      }
+
+      for (const preset of presetResponses) {
+        // 检查必需字段
+        if (!preset.id || !preset.urlPattern) {
+          return { valid: false, reason: '预设响应体缺少必需字段' };
+        }
+
+        // 检查URL模式
+        if (preset.urlPattern.includes('<script') || 
+            preset.urlPattern.includes('javascript:') || 
+            preset.urlPattern.includes('data:') ||
+            preset.urlPattern.includes('vbscript:') ||
+            preset.urlPattern.includes('file:')) {
+          return { valid: false, reason: `不安全的 URL 模式: ${preset.urlPattern}` };
+        }
+
+        // 检查模式长度
+        if (preset.urlPattern.length > 1000) {
+          return { valid: false, reason: 'URL 模式过长' };
+        }
+
+        // 检查状态码
+        if (preset.statusCode && 
+            (typeof preset.statusCode !== 'number' ||
+             preset.statusCode < 100 || 
+             preset.statusCode > 599)) {
+          return { valid: false, reason: '无效的 HTTP 状态码' };
+        }
+
+        // 检查响应体大小
+        if (preset.responseBody && 
+            typeof preset.responseBody === 'string' &&
+            preset.responseBody.length > 10 * 1024 * 1024) { // 10MB
+          return { valid: false, reason: '响应体过大（最大 10MB）' };
+        }
+      }
+
+      return { valid: true };
+    } catch (error) {
+      return { valid: false, reason: '预设响应体验证异常: ' + error.message };
     }
   }
 
@@ -308,9 +386,26 @@ class ResponseInterceptor {
         // 更新拦截统计
         config.interceptedCount = (config.interceptedCount || 0) + 1
         
-        // 打开响应编辑窗口
-        console.log(`🪟 [FETCH拦截] 准备打开编辑窗口...`)
-        await this.openResponseEditWindow(interceptData)
+        // 检查是否有匹配的预设响应体
+        const presetResponse = this.findMatchingPresetResponse(request.url, config.presetResponses);
+        
+        if (presetResponse) {
+          console.log(`⚡ [FETCH拦截] 找到匹配的预设响应体，自动应用:`, presetResponse);
+          
+          // 直接使用预设响应体，无需打开编辑窗口
+          const modifiedResponse = {
+            status: presetResponse.statusCode || 200,
+            body: presetResponse.responseBody || '',
+            headers: interceptData.headers
+          };
+          
+          // 应用预设响应体
+          await this.handleModifiedResponse(requestId, modifiedResponse);
+        } else {
+          // 打开响应编辑窗口
+          console.log(`🪟 [FETCH拦截] 准备打开编辑窗口...`);
+          await this.openResponseEditWindow(interceptData);
+        }
         
         console.log(`✅ [FETCH拦截] 响应拦截处理完成: ${request.url}`)
       } else {
@@ -408,6 +503,27 @@ class ResponseInterceptor {
       
       return matched;
     })
+  }
+
+  // 查找匹配的预设响应体
+  findMatchingPresetResponse(url, presetResponses) {
+    if (!presetResponses || presetResponses.length === 0) {
+      return null;
+    }
+    
+    console.log(`🔍 查找匹配的预设响应体: ${url}`);
+    console.log(`📋 预设响应体列表:`, presetResponses);
+    
+    // 按照配置的顺序查找第一个匹配的预设响应体
+    for (const preset of presetResponses) {
+      if (this.shouldInterceptRequest(url, [preset.urlPattern])) {
+        console.log(`✅ 找到匹配的预设响应体:`, preset);
+        return preset;
+      }
+    }
+    
+    console.log(`⏭️ 没有找到匹配的预设响应体`);
+    return null;
   }
 
   // 打开响应编辑窗口（项目二的方式）
@@ -902,6 +1018,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
       case 'UPDATE_INTERCEPTION_PATTERNS':
         responseInterceptor.updateInterceptionPatterns(message.tabId, message.urlPatterns)
+          .then(result => sendResponse(result))
+          .catch(error => sendResponse({ success: false, error: error.message }))
+        return true
+
+      case 'UPDATE_PRESET_RESPONSES':
+        responseInterceptor.updatePresetResponses(message.tabId, message.presetResponses)
           .then(result => sendResponse(result))
           .catch(error => sendResponse({ success: false, error: error.message }))
         return true

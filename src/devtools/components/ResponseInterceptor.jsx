@@ -5,6 +5,7 @@ const ResponseInterceptor = ({ onNotification, initialState, onStateChange, sele
   const [interceptConfig, setInterceptConfig] = useState({
     enabled: false,
     urlPatterns: [''],
+    presetResponses: [], // 预设响应体列表
     selectedRequestId: null
   })
   const [interceptStatus, setInterceptStatus] = useState({
@@ -22,7 +23,8 @@ const ResponseInterceptor = ({ onNotification, initialState, onStateChange, sele
       setInterceptConfig(prev => ({
         ...prev,
         enabled: initialState.enabled,
-        urlPatterns: initialState.urlPatterns.length > 0 ? initialState.urlPatterns : ['']
+        urlPatterns: initialState.urlPatterns.length > 0 ? initialState.urlPatterns : [''],
+        presetResponses: initialState.presetResponses || []
       }))
       setInterceptStatus(initialState.status)
     }
@@ -330,6 +332,111 @@ const ResponseInterceptor = ({ onNotification, initialState, onStateChange, sele
     }
   }
 
+  /*
+  const updatePresetResponse = (id, updatedPreset) => {
+    const newPresetResponses = interceptConfig.presetResponses.map(preset => 
+      preset.id === id ? { ...preset, ...updatedPreset } : preset
+    )
+    setInterceptConfig(prev => ({
+      ...prev,
+      presetResponses: newPresetResponses
+    }))
+    
+    // 同步更新到父组件
+    if (onStateChange) {
+      onStateChange(prev => ({ ...prev, presetResponses: newPresetResponses }))
+    }
+    
+    // 同步到后台
+    if (interceptConfig.enabled && currentTabId) {
+      chrome.runtime.sendMessage({
+        type: 'UPDATE_PRESET_RESPONSES',
+        tabId: currentTabId,
+        presetResponses: newPresetResponses
+      }, (response) => {
+        if (response && response.success) {
+          showNotification('预设响应体已更新', 'success')
+        } else {
+          showNotification('更新预设响应体失败: ' + (response?.error || '未知错误'), 'error')
+        }
+      })
+    }
+  }
+  */
+
+  // 处理预设响应体变化
+  const handlePresetResponseChange = (urlPattern, changes) => {
+    // 查找是否已存在该URL模式的预设响应体
+    const existingPresetIndex = interceptConfig.presetResponses.findIndex(preset => preset.urlPattern === urlPattern);
+    
+    let newPresetResponses;
+    if (existingPresetIndex >= 0) {
+      // 更新现有的预设响应体
+      const updatedPreset = { ...interceptConfig.presetResponses[existingPresetIndex], ...changes };
+      newPresetResponses = [...interceptConfig.presetResponses];
+      newPresetResponses[existingPresetIndex] = updatedPreset;
+    } else {
+      // 创建新的预设响应体
+      const newPreset = {
+        id: Date.now().toString(),
+        urlPattern,
+        statusCode: 200,
+        responseBody: '',
+        createdAt: Date.now(),
+        ...changes
+      };
+      newPresetResponses = [...interceptConfig.presetResponses, newPreset];
+    }
+    
+    setInterceptConfig(prev => ({ ...prev, presetResponses: newPresetResponses }));
+    
+    // 同步更新到父组件
+    if (onStateChange) {
+      onStateChange(prev => ({ ...prev, presetResponses: newPresetResponses }));
+    }
+    
+    // 同步到后台
+    if (interceptConfig.enabled && currentTabId) {
+      chrome.runtime.sendMessage({
+        type: 'UPDATE_PRESET_RESPONSES',
+        tabId: currentTabId,
+        presetResponses: newPresetResponses
+      }, (response) => {
+        if (response && response.success) {
+          showNotification('预设响应体已更新', 'success');
+        } else {
+          showNotification('更新预设响应体失败: ' + (response?.error || '未知错误'), 'error');
+        }
+      });
+    }
+  };
+
+  // 移除指定URL模式的预设响应体
+  const removePresetResponseForPattern = (urlPattern) => {
+    const newPresetResponses = interceptConfig.presetResponses.filter(preset => preset.urlPattern !== urlPattern);
+    setInterceptConfig(prev => ({ ...prev, presetResponses: newPresetResponses }));
+    
+    // 同步更新到父组件
+    if (onStateChange) {
+      onStateChange(prev => ({ ...prev, presetResponses: newPresetResponses }));
+    }
+    
+    // 同步到后台
+    if (interceptConfig.enabled && currentTabId) {
+      chrome.runtime.sendMessage({
+        type: 'UPDATE_PRESET_RESPONSES',
+        tabId: currentTabId,
+        presetResponses: newPresetResponses
+      }, (response) => {
+        if (response && response.success) {
+          showNotification('预设响应体已移除', 'success');
+        } else {
+          showNotification('移除预设响应体失败: ' + (response?.error || '未知错误'), 'error');
+        }
+      });
+    }
+  };
+
   // 预设模式选项
   const presetPatterns = [
     { name: '所有请求', pattern: '*', description: '拦截所有网络请求' },
@@ -516,6 +623,70 @@ const ResponseInterceptor = ({ onNotification, initialState, onStateChange, sele
             )}
           </div>
         </div>
+        
+        {/* 预设响应体配置 */}
+        {interceptStatus.enabled && (
+          <div className="config-section">
+            <div className="section-header">
+              <h4>预设响应体</h4>
+              <span className="section-description">为每个拦截规则配置预设的响应内容</span>
+            </div>
+            
+            {/* 为每个URL模式提供预设响应体配置 */}
+            {interceptConfig.urlPatterns.map((pattern, index) => (
+              <div key={index} className="preset-response-config">
+                <div className="pattern-label">
+                  规则 {index + 1}: {pattern || '未设置'}
+                </div>
+                
+                {/* 查找该模式对应的预设响应体 */}
+                {(() => {
+                  const presetForPattern = interceptConfig.presetResponses.find(preset => preset.urlPattern === pattern);
+                  return (
+                    <>
+                      <div className="form-group">
+                        <label className="form-label">状态码</label>
+                        <input
+                          type="number"
+                          value={presetForPattern?.statusCode || 200}
+                          onChange={(e) => {
+                            const statusCode = parseInt(e.target.value) || 200;
+                            handlePresetResponseChange(pattern, { statusCode });
+                          }}
+                          className="form-input"
+                          style={{ width: '120px' }}
+                        />
+                      </div>
+                      
+                      <div className="form-group">
+                        <label className="form-label">响应体内容</label>
+                        <textarea
+                          placeholder="预设响应体内容（JSON格式）"
+                          className="form-textarea"
+                          style={{ minHeight: '120px' }}
+                          value={presetForPattern?.responseBody || ''}
+                          onChange={(e) => {
+                            handlePresetResponseChange(pattern, { responseBody: e.target.value });
+                          }}
+                        />
+                      </div>
+                      
+                      {presetForPattern && (
+                        <button 
+                          className="btn btn-secondary"
+                          onClick={() => removePresetResponseForPattern(pattern)}
+                          style={{ marginBottom: '16px' }}
+                        >
+                          清除预设响应
+                        </button>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* 拦截统计 */}
         {interceptStatus.enabled && (
@@ -581,6 +752,13 @@ ResponseInterceptor.propTypes = {
   initialState: PropTypes.shape({
     enabled: PropTypes.bool,
     urlPatterns: PropTypes.arrayOf(PropTypes.string),
+    presetResponses: PropTypes.arrayOf(PropTypes.shape({
+      id: PropTypes.string.isRequired,
+      urlPattern: PropTypes.string.isRequired,
+      statusCode: PropTypes.number,
+      responseBody: PropTypes.string,
+      createdAt: PropTypes.number
+    })),
     status: PropTypes.shape({
       attachedDebugger: PropTypes.bool,
       interceptedCount: PropTypes.number,
