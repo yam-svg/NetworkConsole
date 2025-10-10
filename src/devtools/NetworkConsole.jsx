@@ -154,8 +154,8 @@ function NetworkConsole() {
   const handleRequestSelect = (request) => {
     setSelectedRequest(request)
     
-    // 如果当前在响应拦截标签页，自动填充URL模式
-    if (activeTab === 'interceptor' && request && request.url) {
+    // 如果当前在响应拦截标签页，且拦截未启用时，自动填充URL模式
+    if (activeTab === 'interceptor' && request && request.url && !interceptorState.enabled) {
       try {
         const url = new URL(request.url)
         const pattern = `${url.origin}${url.pathname}*`
@@ -603,7 +603,6 @@ function NetworkConsole() {
         </div>
 
         <div className="details-panel">
-          {selectedRequest ? (
             <div className="details-container">
               {/* 标签页头部 */}
               <div className="details-tabs">
@@ -731,11 +730,6 @@ function NetworkConsole() {
                 )}
               </div>
             </div>
-          ) : (
-            <div className="empty-details">
-              选择一个请求以查看详情
-            </div>
-          )}
         </div>
       </Split>
     </div>
