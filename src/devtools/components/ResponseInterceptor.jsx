@@ -701,7 +701,7 @@ const ResponseInterceptor = ({ onNotification, initialState, onStateChange, sele
           <div className="config-section">
             <div className="section-header">
               <h4>预设响应体</h4>
-              <span className="section-description">为每个拦截规则配置预设的响应内容</span>
+              <span className="section-description">为每个拦截规则配置预设的响应内容 (非必填)</span>
             </div>
             
             {/* 为每个URL模式提供预设响应体配置 */}
@@ -731,7 +731,7 @@ const ResponseInterceptor = ({ onNotification, initialState, onStateChange, sele
                       </div>
                       
                       <div className="form-group">
-                        <label className="form-label">响应体内容</label>
+                        <label className="form-label">响应体内容 (右下角可控制输入框大小)</label>
                         <textarea
                           placeholder="预设响应体内容（JSON格式）"
                           className="form-textarea"
