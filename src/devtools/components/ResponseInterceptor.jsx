@@ -783,13 +783,14 @@ const ResponseInterceptor = ({ onNotification, initialState, onStateChange, sele
                       </div>
                       
                       <div className="form-group">
-                        <label className="form-label">响应体内容 (右下角可控制输入框大小)</label>
+                        <label className="form-label">响应体内容 (右下角可控制输入框大小, 失焦后生效最新修改)</label>
                         <textarea
                           placeholder="预设响应体内容（JSON格式）"
                           className="form-textarea"
-                          style={{ minHeight: '120px' }}
-                          value={presetForPattern?.responseBody || ''}
-                          onChange={(e) => {
+                          style={{ minHeight: '200px' }}
+                          defaultValue={presetForPattern?.responseBody || ''}
+                          // value={presetForPattern?.responseBody || ''}
+                          onBlur={(e) => {
                             if (e.target.value.length === 0) {
                               removePresetResponseForPattern(pattern)
                             } else {
