@@ -1,15 +1,15 @@
 // 网络控制台 - 增强内容脚本（支持真实响应拦截）
-console.log('🔗 网络控制台 Content Script 开始加载:', window.location.href);
+// console.log('🔗 网络控制台 Content Script 开始加载:', window.location.href);
 
 // 确保脚本在页面加载前就开始执行
 (function() {
   'use strict';
   
-  console.log('🚀 Enhanced Content Script 主函数开始执行');
+  // console.log('🚀 Enhanced Content Script 主函数开始执行');
   
   // 检查是否已经注入过，避免重复注入
   if (window.__NETWORK_CONSOLE_INJECTED__) {
-    console.log('⚠️ 网络拦截器已存在，跳过重复注入');
+    // console.log('⚠️ 网络拦截器已存在，跳过重复注入');
     return;
   }
   
@@ -47,7 +47,7 @@ console.log('🔗 网络控制台 Content Script 开始加载:', window.location
         
         return regex.test(url);
       } catch (error) {
-        console.warn('⚠️ 模式匹配错误:', error);
+        // console.warn('⚠️ 模式匹配错误:', error);
         return url.includes(pattern.replace(/\*/g, ''));
       }
     });
@@ -55,7 +55,7 @@ console.log('🔗 网络控制台 Content Script 开始加载:', window.location
   
   // 发送网络请求数据到background script
   function sendNetworkRequest(data) {
-    console.log('📤 Content Script 发送网络请求数据:', data.method, data.url, '类型:', data.requestType);
+    // console.log('📤 Content Script 发送网络请求数据:', data.method, data.url, '类型:', data.requestType);
     
     try {
       // 安全序列化数据，移除不可序列化的属性
@@ -77,18 +77,18 @@ console.log('🔗 网络控制台 Content Script 开始加载:', window.location
         type: 'NETWORK_REQUEST',
         data: safeData
       }).then(response => {
-        console.log('✅ Content Script 请求数据已发送:', response);
+        // console.log('✅ Content Script 请求数据已发送:', response);
       }).catch(err => {
-        console.log('❌ Content Script 发送失败:', err);
+        // console.log('❌ Content Script 发送失败:', err);
       });
     } catch (err) {
-      console.error('Content Script 消息发送异常:', err);
+      // console.error('Content Script 消息发送异常:', err);
     }
   }
   
   // 创建修改后的Response对象
   function createModifiedResponse(originalResponse, modifiedBody, modifiedHeaders = {}) {
-    console.log('🔧 开始创建修改后的Response对象');
+    // console.log('🔧 开始创建修改后的Response对象');
     
     try {
       // 合并响应头
@@ -129,11 +129,11 @@ console.log('🔗 网络控制台 Content Script 开始加载:', window.location
         headers: headers
       });
       
-      console.log('✅ 修改后的Response对象创建成功');
+      // console.log('✅ 修改后的Response对象创建成功');
       return modifiedResponse;
       
     } catch (error) {
-      console.error('❌ 创建修改后的Response对象失败:', error);
+      // console.error('❌ 创建修改后的Response对象失败:', error);
       return originalResponse;
     }
   }
@@ -149,7 +149,7 @@ console.log('🔗 网络控制台 Content Script 开始加载:', window.location
       const MAX_BODY_SIZE = 200 * 1024; // 200KB 上限，避免卡顿
       const urlString = url.toString();
       
-      console.log('🎯 Enhanced Fetch 拦截开始:', method, urlString);
+      // console.log('🎯 Enhanced Fetch 拦截开始:', method, urlString);
       
       const requestData = {
         id: requestId,
@@ -168,10 +168,10 @@ console.log('🔗 网络控制台 Content Script 开始加载:', window.location
       
       // 检查是否需要拦截这个请求
       const shouldIntercept = shouldInterceptUrl(urlString);
-      console.log('🔍 URL拦截检查:', urlString, '结果:', shouldIntercept);
+      // console.log('🔍 URL拦截检查:', urlString, '结果:', shouldIntercept);
       
       if (shouldIntercept) {
-        console.log('🛡️ 请求被标记为拦截:', urlString);
+        // console.log('🛡️ 请求被标记为拦截:', urlString);
         // 将请求标记为待拦截
         interceptorConfig.pendingRequests.set(requestId, {
           url: urlString,
@@ -184,21 +184,21 @@ console.log('🔗 网络控制台 Content Script 开始加载:', window.location
       
       try {
         const startTime = performance.now();
-        console.log('📡 开始发送原始fetch请求');
+        // console.log('📡 开始发送原始fetch请求');
         
         const response = await originalFetch.call(this, url, init);
         const endTime = performance.now();
         
-        console.log('📨 原始fetch响应接收完成:', response.status, response.statusText);
+        // console.log('📨 原始fetch响应接收完成:', response.status, response.statusText);
         
         // 如果这个请求被拦截，检查是否有修改的响应
         if (shouldIntercept) {
-          console.log('🔄 检查是否有修改的响应数据');
+          // console.log('🔄 检查是否有修改的响应数据');
           
           // 检查是否有预设的修改响应
           const modifiedResponseData = interceptorConfig.modifiedResponses.get(requestId);
           if (modifiedResponseData) {
-            console.log('✨ 找到修改的响应数据，应用修改');
+            // console.log('✨ 找到修改的响应数据，应用修改');
             
             // 清理存储的修改数据
             interceptorConfig.modifiedResponses.delete(requestId);
@@ -222,7 +222,7 @@ console.log('🔗 网络控制台 Content Script 开始加载:', window.location
             responseHeaders[key] = value;
           });
         } catch (error) {
-          console.warn('⚠️ 无法读取响应头:', error);
+          // console.warn('⚠️ 无法读取响应头:', error);
         }
 
         try {
@@ -244,7 +244,7 @@ console.log('🔗 网络控制台 Content Script 开始加载:', window.location
             responseText = responseText.slice(0, MAX_BODY_SIZE) + '...内容过大已截断';
           }
         } catch (readErr) {
-          console.warn('⚠️ 无法读取响应内容:', readErr);
+          // console.warn('⚠️ 无法读取响应内容:', readErr);
         }
 
         // 更新请求状态
@@ -256,11 +256,11 @@ console.log('🔗 网络控制台 Content Script 开始加载:', window.location
           responseHeaders
         });
         
-        console.log('✅ Fetch请求处理完成，返回响应');
+        // console.log('✅ Fetch请求处理完成，返回响应');
         return response;
         
       } catch (error) {
-        console.error('❌ Fetch请求失败:', error);
+        // console.error('❌ Fetch请求失败:', error);
         
         sendNetworkRequest({
           ...requestData,
@@ -272,14 +272,14 @@ console.log('🔗 网络控制台 Content Script 开始加载:', window.location
       }
     };
     
-    console.log('✅ Enhanced Fetch 拦截器已设置');
+    // console.log('✅ Enhanced Fetch 拦截器已设置');
   } catch (err) {
-    console.error('❌ 设置 Enhanced Fetch 拦截器失败:', err);
+    // console.error('❌ 设置 Enhanced Fetch 拦截器失败:', err);
   }
   
   // 监听来自DevTools的消息
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    console.log('📨 Content Script 收到消息:', message.type);
+    // console.log('📨 Content Script 收到消息:', message.type);
     
     try {
       switch (message.type) {
@@ -292,14 +292,14 @@ console.log('🔗 网络控制台 Content Script 开始加载:', window.location
           break;
           
         case 'ENABLE_RESPONSE_INTERCEPTION':
-          console.log('🛡️ 启用响应拦截:', message.patterns);
+          // console.log('🛡️ 启用响应拦截:', message.patterns);
           interceptorConfig.enabled = true;
           interceptorConfig.patterns = message.patterns || [];
           sendResponse({ success: true });
           break;
           
         case 'DISABLE_RESPONSE_INTERCEPTION':
-          console.log('🚫 禁用响应拦截');
+          // console.log('🚫 禁用响应拦截');
           interceptorConfig.enabled = false;
           interceptorConfig.patterns = [];
           interceptorConfig.modifiedResponses.clear();
@@ -308,7 +308,7 @@ console.log('🔗 网络控制台 Content Script 开始加载:', window.location
           break;
           
         case 'APPLY_MODIFIED_RESPONSE':
-          console.log('✏️ 应用修改的响应:', message.requestId);
+          // console.log('✏️ 应用修改的响应:', message.requestId);
           
           // 存储修改的响应数据
           interceptorConfig.modifiedResponses.set(message.requestId, {
@@ -331,17 +331,17 @@ console.log('🔗 网络控制台 Content Script 开始加载:', window.location
           break;
           
         case 'RESPONSE_MODIFIED':
-          console.log('📋 Content Script 收到响应修改通知:', message.data);
+          // console.log('📋 Content Script 收到响应修改通知:', message.data);
           handleResponseModified(message.data);
           sendResponse({ success: true });
           break;
           
         default:
-          console.log('❓ 未知消息类型:', message.type);
+          // console.log('❓ 未知消息类型:', message.type);
           sendResponse({ success: false, error: '未知消息类型' });
       }
     } catch (error) {
-      console.error('❌ 处理消息失败:', error);
+      // console.error('❌ 处理消息失败:', error);
       sendResponse({ success: false, error: error.message });
     }
     
@@ -353,7 +353,7 @@ console.log('🔗 网络控制台 Content Script 开始加载:', window.location
     try {
       const { requestId, response } = data;
       
-      console.log('🔄 处理响应修改通知:', requestId);
+      // console.log('🔄 处理响应修改通知:', requestId);
       
       // 触发自定义事件
       const event = new CustomEvent('networkResponseModified', {
@@ -367,31 +367,31 @@ console.log('🔗 网络控制台 Content Script 开始加载:', window.location
       window.dispatchEvent(event);
       document.dispatchEvent(event);
       
-      console.log('✅ 响应修改事件已触发:', { requestId, status: response.status });
+      // console.log('✅ 响应修改事件已触发:', { requestId, status: response.status });
     } catch (error) {
-      console.error('❌ 处理响应修改通知失败:', error);
+      // console.error('❌ 处理响应修改通知失败:', error);
     }
   }
   
   // 监听网络响应修改事件
   window.addEventListener('networkResponseModified', (event) => {
-    console.log('📋 监听到网络响应修改事件:', event.detail);
+    // console.log('📋 监听到网络响应修改事件:', event.detail);
   });
   
   // 测试网络捕获功能
   function testNetworkCapture() {
-    console.log('🧪 准备测试网络捕获功能...');
+    // console.log('🧪 准备测试网络捕获功能...');
     
     // 延迟3秒后发送测试请求
     setTimeout(() => {
-      console.log('🔬 发送测试请求...');
+      // console.log('🔬 发送测试请求...');
       fetch('https://httpbin.org/get?test=enhanced-content-script-test&time=' + Date.now())
         .then(response => response.json())
         .then(data => {
-          console.log('🎉 测试请求成功:', data);
+          // console.log('🎉 测试请求成功:', data);
         })
         .catch(err => {
-          console.log('⚠️ 测试请求失败（这是正常的，重要的是能捕获到请求）:', err.message);
+          // console.log('⚠️ 测试请求失败（这是正常的，重要的是能捕获到请求）:', err.message);
         });
     }, 3000);
   }
@@ -399,7 +399,7 @@ console.log('🔗 网络控制台 Content Script 开始加载:', window.location
   // 页面加载完成后的初始化
   function initialize() {
     testNetworkCapture();
-    console.log('🎯 Enhanced Content Script 初始化完成，支持真实响应拦截');
+    // console.log('🎯 Enhanced Content Script 初始化完成，支持真实响应拦截');
     
     // 暴露拦截器配置到全局，供调试使用
     window.__networkInterceptorConfig__ = interceptorConfig;
