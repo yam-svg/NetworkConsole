@@ -862,7 +862,7 @@ const ResponseInterceptor = ({ onNotification, initialState, onStateChange, sele
             <div className="warning-box">
               <strong>⚠️ 注意事项：</strong>
               <ul>
-                <li>作者水平差, 只能实现一个标签页内拦截, 如果多开几个页面的控制台, 会导致异常</li>
+                <li>作者水平差, 只能实现一个标签页内拦截, 如果多开几个页面的控制台, 会导致异常, 使用前请确保浏览器控制台只存在一个, 如有多个请关闭其余控制台</li>
                 <li>实验性功能, 无法保证所有页面都能正常使用</li>
                 <li>响应拦截需要调试器权限，可能会影响页面性能</li>
                 <li>某些请求类型（如 CORS、Opaque）可能无法被拦截</li>
