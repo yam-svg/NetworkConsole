@@ -866,6 +866,7 @@ const ResponseInterceptor = ({ onNotification, initialState, onStateChange, sele
                 <li>实验性功能, 无法保证所有页面都能正常使用</li>
                 <li>响应拦截需要调试器权限，可能会影响页面性能</li>
                 <li>某些请求类型（如 CORS、Opaque）可能无法被拦截</li>
+                <li>如果预设响应体生效后立即拦截请求, 可能会导致该请求失效, 请等待预设响应生效2s后再触发请求</li>
                 <li>修改响应可能会影响页面功能，请谨慎操作</li>
               </ul>
             </div>
