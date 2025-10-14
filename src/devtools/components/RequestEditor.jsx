@@ -207,10 +207,7 @@ const RequestEditor = ({ request, onSendRequest, onResponse }) => {
             })
           }
           
-          // 同时调用原来的onSendRequest
-          if (onSendRequest) {
-            onSendRequest(requestToSend)
-          }
+
         } else {
           // 用户中止
           if (onResponse) {
