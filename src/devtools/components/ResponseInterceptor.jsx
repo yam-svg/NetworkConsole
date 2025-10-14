@@ -785,6 +785,7 @@ const ResponseInterceptor = ({ onNotification, initialState, onStateChange, sele
                       <div className="form-group">
                         <label className="form-label">响应体内容 (右下角可控制输入框大小, 失焦后生效最新修改)</label>
                         <textarea
+                          id={pattern}
                           placeholder="预设响应体内容（JSON格式）"
                           className="form-textarea"
                           style={{ minHeight: '200px' }}
@@ -803,7 +804,14 @@ const ResponseInterceptor = ({ onNotification, initialState, onStateChange, sele
                       {presetForPattern && (
                         <button 
                           className="btn btn-secondary"
-                          onClick={() => removePresetResponseForPattern(pattern)}
+                          onClick={() => {
+                            removePresetResponseForPattern(pattern)
+                            // 清除文本框内容
+                            const textarea = document.getElementById(pattern);
+                            if (textarea) {
+                              textarea.value = '';
+                            }
+                          }}
                           style={{ marginBottom: '16px' }}
                         >
                           清除预设响应
